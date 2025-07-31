@@ -1,326 +1,287 @@
 import React, { useState, useEffect } from 'react';
-import { FormInput, FormTextarea, Button } from '../components/forms/FormComponents';
-import { Edit, Trash2, Plus, Loader } from 'lucide-react';
-import { suppliersService } from '../services/firebaseServices';
+import { Plus, Edit, Trash2, Search } from 'lucide-react';
 
 const SupplierManagement = () => {
+  const [suppliers, setSuppliers] = useState([
+    // Sample data for demonstration
+    {
+      id: 1,
+      name: 'Mica Industries Ltd',
+      contact: '+91-9876543210',
+      email: 'contact@micaindustries.com',
+      address: '123 Industrial Area, Jharkhand',
+      materialType: 'Raw Mica',
+      status: 'active'
+    },
+    {
+      id: 2,
+      name: 'Premium Mica Co.',
+      contact: '+91-9876543211',
+      email: 'info@premiummica.com',
+      address: '456 Mining District, Rajasthan',
+      materialType: 'Mica Sheets',
+      status: 'active'
+    }
+  ]);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
-    supplierName: '',
-    contactPerson: '',
-    phoneNumber: '',
+    name: '',
+    contact: '',
     email: '',
     address: '',
+    materialType: '',
+    status: 'active'
   });
-
-  const [suppliers, setSuppliers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-
-  // Load suppliers on component mount
-  useEffect(() => {
-    loadSuppliers();
-  }, []);
-
-  const loadSuppliers = async () => {
-    try {
-      setLoading(true);
-      const suppliersData = await suppliersService.getSuppliers();
-      setSuppliers(suppliersData);
-    } catch (error) {
-      console.error('Error loading suppliers:', error);
-      alert('Error loading suppliers. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
-
     try {
-      if (editingId) {
-        // Update existing supplier
-        await suppliersService.updateSupplier(editingId, formData);
+      if (editingSupplier) {
+        // Update supplier
         setSuppliers(prev => prev.map(supplier => 
-          supplier.id === editingId 
-            ? { ...supplier, ...formData }
+          supplier.id === editingSupplier.id 
+            ? { ...formData, id: editingSupplier.id }
             : supplier
         ));
-        setEditingId(null);
-        alert('Supplier updated successfully!');
       } else {
         // Add new supplier
-        const newSupplier = await suppliersService.addSupplier(formData);
-        setSuppliers(prev => [newSupplier, ...prev]);
-        alert('Supplier added successfully!');
+        const newSupplier = {
+          ...formData,
+          id: Date.now() // Simple ID generation for demo
+        };
+        setSuppliers(prev => [...prev, newSupplier]);
       }
-
-      // Reset form
-      setFormData({
-        supplierName: '',
-        contactPerson: '',
-        phoneNumber: '',
-        email: '',
-        address: '',
-      });
+      resetForm();
     } catch (error) {
       console.error('Error saving supplier:', error);
-      alert('Error saving supplier. Please try again.');
-    } finally {
-      setSubmitting(false);
     }
   };
 
   const handleEdit = (supplier) => {
-    setFormData({
-      supplierName: supplier.supplierName,
-      contactPerson: supplier.contactPerson,
-      phoneNumber: supplier.phoneNumber,
-      email: supplier.email,
-      address: supplier.address,
-    });
-    setEditingId(supplier.id);
-    // Scroll to form
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditingSupplier(supplier);
+    setFormData(supplier);
+    setIsFormOpen(true);
   };
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setFormData({
-      supplierName: '',
-      contactPerson: '',
-      phoneNumber: '',
-      email: '',
-      address: '',
-    });
-  };
-
-  const handleDelete = async (supplier) => {
-    if (window.confirm(`Are you sure you want to delete ${supplier.supplierName}?`)) {
+  const handleDelete = async (supplierId) => {
+    if (window.confirm('Are you sure you want to delete this supplier?')) {
       try {
-        await suppliersService.deleteSupplier(supplier.id);
-        setSuppliers(prev => prev.filter(s => s.id !== supplier.id));
-        alert('Supplier deleted successfully!');
+        setSuppliers(prev => prev.filter(supplier => supplier.id !== supplierId));
       } catch (error) {
         console.error('Error deleting supplier:', error);
-        alert('Error deleting supplier. Please try again.');
       }
     }
   };
 
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      contact: '',
+      email: '',
+      address: '',
+      materialType: '',
+      status: 'active'
+    });
+    setEditingSupplier(null);
+    setIsFormOpen(false);
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const filteredSuppliers = suppliers.filter(supplier =>
+    supplier.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    supplier.materialType?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
-    <div className="content-wrapper-mica">
-      <div className="flex flex-col max-w-6xl mx-auto">
-        {/* Page Header */}
-        <div className="flex flex-wrap justify-between gap-3 p-4">
-          <h1 className="text-heading text-4xl font-bold leading-tight min-w-72">
-            Supplier Management
-          </h1>
+    <div id="supplier-management" className="w-full">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-secondary mb-2">Supplier Management</h1>
+          <p className="text-gray-600">Manage your mica suppliers and their information</p>
         </div>
+        <button
+          onClick={() => setIsFormOpen(true)}
+          className="btn-primary flex items-center space-x-2"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Add Supplier</span>
+        </button>
+      </div>
 
-        {/* Add Supplier Form */}
-        <div className="card-mica mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-heading text-2xl font-bold leading-tight tracking-[-0.015em]">
-              {editingId ? 'Edit Supplier' : 'Add Supplier'}
-            </h2>
-            {editingId && (
-              <Button 
-                type="button" 
-                variant="secondary" 
-                onClick={handleCancelEdit}
-                className="text-sm py-2 px-4"
-              >
-                Cancel Edit
-              </Button>
-            )}
-          </div>
-          
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* First Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormInput
-                label="Supplier Name"
-                id="supplierName"
-                name="supplierName"
-                placeholder="Enter supplier name"
-                value={formData.supplierName}
-                onChange={handleInputChange}
-                required
-              />
-              <FormInput
-                label="Contact Person"
-                id="contactPerson"
-                name="contactPerson"
-                placeholder="Enter contact person name"
-                value={formData.contactPerson}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-
-            {/* Second Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormInput
-                label="Phone Number"
-                id="phoneNumber"
-                name="phoneNumber"
-                type="tel"
-                placeholder="Enter phone number"
-                value={formData.phoneNumber}
-                onChange={handleInputChange}
-                required
-              />
-              <FormInput
-                label="Email"
-                id="email"
-                name="email"
-                type="email"
-                placeholder="Enter email address"
-                value={formData.email}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-
-            {/* Address */}
-            <FormTextarea
-              label="Address"
-              id="address"
-              name="address"
-              placeholder="Enter supplier address"
-              value={formData.address}
-              onChange={handleInputChange}
-              required
-              rows={3}
-            />
-
-            {/* Submit Button */}
-            <div className="flex justify-start">
-              <Button 
-                type="submit" 
-                variant="primary" 
-                disabled={submitting}
-                className="flex items-center gap-2"
-              >
-                {submitting ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin" />
-                    {editingId ? 'Updating...' : 'Adding...'}
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4" />
-                    {editingId ? 'Update Supplier' : 'Add Supplier'}
-                  </>
-                )}
-              </Button>
-            </div>
-          </form>
+      {/* Search Bar */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <input
+            type="text"
+            placeholder="Search suppliers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          />
         </div>
+      </div>
 
-        {/* Existing Suppliers Table */}
-        <div className="card-mica">
-          <h2 className="text-heading text-2xl font-bold leading-tight tracking-[-0.015em] mb-6">
-            Existing Suppliers ({suppliers.length})
-          </h2>
-          
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader className="w-8 h-8 animate-spin text-primary-orange" />
-              <span className="ml-3 text-secondary-text">Loading suppliers...</span>
-            </div>
-          ) : suppliers.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-secondary-text text-lg mb-4">No suppliers found</p>
-              <p className="text-secondary-text">Add your first supplier using the form above.</p>
-            </div>
-          ) : (
+      {/* Suppliers Table */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="overflow-x-auto">
-              <div className="flex overflow-hidden rounded-xl border border-light-border bg-white-bg">
-                <table className="flex-1 min-w-full">
-                  <thead>
-                    <tr className="bg-light-gray-bg">
-                      <th className="px-4 py-3 text-left text-body-text text-sm font-semibold leading-normal">
-                        Supplier Name
-                      </th>
-                      <th className="px-4 py-3 text-left text-body-text text-sm font-semibold leading-normal">
-                        Contact Person
-                      </th>
-                      <th className="px-4 py-3 text-left text-body-text text-sm font-semibold leading-normal">
-                        Phone Number
-                      </th>
-                      <th className="px-4 py-3 text-left text-body-text text-sm font-semibold leading-normal">
-                        Email
-                      </th>
-                      <th className="px-4 py-3 text-left text-body-text text-sm font-semibold leading-normal">
-                        Address
-                      </th>
-                      <th className="px-4 py-3 text-left text-secondary-text text-sm font-semibold leading-normal">
-                        Actions
-                      </th>
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredSuppliers.map((supplier) => (
+                    <tr key={supplier.id || Math.random()}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{supplier.name}</div>
+                          <div className="text-sm text-gray-500">{supplier.email}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{supplier.contact}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{supplier.materialType}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          supplier.status === 'active' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {supplier.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => handleEdit(supplier)}
+                          className="text-indigo-600 hover:text-indigo-900 mr-4"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(supplier.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {suppliers.map((supplier, index) => (
-                      <tr 
-                        key={supplier.id} 
-                        className={`border-t border-light-border ${
-                          index % 2 === 0 ? 'bg-white-bg' : 'bg-light-gray-bg'
-                        } ${editingId === supplier.id ? 'ring-2 ring-primary-orange' : ''}`}
-                      >
-                        <td className="px-4 py-4 text-body-text text-sm font-medium leading-normal">
-                          {supplier.supplierName}
-                        </td>
-                        <td className="px-4 py-4 text-secondary-text text-sm font-normal leading-normal">
-                          {supplier.contactPerson}
-                        </td>
-                        <td className="px-4 py-4 text-secondary-text text-sm font-normal leading-normal">
-                          {supplier.phoneNumber}
-                        </td>
-                        <td className="px-4 py-4 text-secondary-text text-sm font-normal leading-normal">
-                          {supplier.email}
-                        </td>
-                        <td className="px-4 py-4 text-secondary-text text-sm font-normal leading-normal max-w-xs truncate">
-                          {supplier.address}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => handleEdit(supplier)}
-                              className="text-primary-orange hover:text-orange-600 transition-colors"
-                              title="Edit Supplier"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(supplier)}
-                              className="text-red-500 hover:text-red-600 transition-colors"
-                              title="Delete Supplier"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Add/Edit Supplier Modal */}
+          {isFormOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                <h2 className="text-xl font-semibold text-secondary mb-4">
+                  {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
+                </h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Supplier Name
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.name}
+                      onChange={(e) => handleInputChange('name', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Contact Number
+                    </label>
+                    <input
+                      type="tel"
+                      className="form-input"
+                      value={formData.contact}
+                      onChange={(e) => handleInputChange('contact', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={formData.email}
+                      onChange={(e) => handleInputChange('email', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Address
+                    </label>
+                    <textarea
+                      className="form-textarea"
+                      rows={3}
+                      value={formData.address}
+                      onChange={(e) => handleInputChange('address', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Material Type
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.materialType}
+                      onChange={(e) => handleInputChange('materialType', e.target.value)}
+                      required
+                    >
+                      <option value="">Select Material Type</option>
+                      <option value="Raw Mica">Raw Mica</option>
+                      <option value="Mica Sheets">Mica Sheets</option>
+                      <option value="Mica Powder">Mica Powder</option>
+                      <option value="Mica Flakes">Mica Flakes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Status
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.status}
+                      onChange={(e) => handleInputChange('status', e.target.value)}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div className="flex space-x-3 pt-4">
+                    <button type="submit" className="btn-primary flex-1">
+                      {editingSupplier ? 'Update' : 'Add'} Supplier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="btn-secondary flex-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
-        </div>
-      </div>
     </div>
   );
 };

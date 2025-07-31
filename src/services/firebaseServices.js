@@ -12,6 +12,59 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
+// Generic CRUD functions
+export const addDocument = async (collectionName, data) => {
+  try {
+    const docRef = await addDoc(collection(db, collectionName), {
+      ...data,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    return { id: docRef.id, ...data };
+  } catch (error) {
+    console.error(`Error adding document to ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+export const getDocuments = async (collectionName) => {
+  try {
+    const querySnapshot = await getDocs(collection(db, collectionName));
+    const documents = [];
+    querySnapshot.forEach((doc) => {
+      documents.push({ id: doc.id, ...doc.data() });
+    });
+    return documents;
+  } catch (error) {
+    console.error(`Error getting documents from ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+export const updateDocument = async (collectionName, docId, data) => {
+  try {
+    const docRef = doc(db, collectionName, docId);
+    await updateDoc(docRef, {
+      ...data,
+      updatedAt: new Date().toISOString()
+    });
+    return { id: docId, ...data };
+  } catch (error) {
+    console.error(`Error updating document in ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+export const deleteDocument = async (collectionName, docId) => {
+  try {
+    await deleteDoc(doc(db, collectionName, docId));
+    return docId;
+  } catch (error) {
+    console.error(`Error deleting document from ${collectionName}:`, error);
+    throw error;
+  }
+};
+
 // Suppliers Service
 export const suppliersService = {
   // Add new supplier
