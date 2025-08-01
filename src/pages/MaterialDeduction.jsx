@@ -10,7 +10,8 @@ const MaterialDeduction = () => {
     quantity: '',
     unit: 'kg',
     reason: '',
-    deductedBy: '',
+    invoiceNumber: '',
+    truckNumber: '',
     notes: ''
   });
 
@@ -53,24 +54,25 @@ const MaterialDeduction = () => {
     };
     console.log('Material Deduction Data:', submissionData);
     // TODO: Integrate with Firebase
-    alert('Material deduction recorded successfully!');
+    // TODO: Replace with custom modal
+    console.log('Material deduction recorded successfully!');
   };
 
   return (
-    <div id="material-deduction" className="">
+    <div id="material-deduction" className="w-full">
       <div className="flex items-center gap-3 mb-6">
-        <Minus className="w-8 h-8 text-primary" />
+        <Minus className="w-8 h-8 text-primary-orange" />
         <div>
-          <h1 className="text-3xl font-bold text-secondary mb-2">Material Deduction</h1>
-          <p className="text-gray-600">Record material usage and inventory deductions</p>
+          <h1 className="text-3xl font-bold text-secondary-blue mb-2">Material Deduction</h1>
+          <p className="text-body">Record material usage and inventory deductions</p>
         </div>
       </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Deduction Type Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
+                <label className="block text-sm font-medium text-secondary-blue mb-3">
                   Deduction Type
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -79,15 +81,15 @@ const MaterialDeduction = () => {
                     onClick={() => handleDeductionTypeChange('order-sheet')}
                     className={`p-4 rounded-lg border-2 text-left transition-colors ${
                       deductionType === 'order-sheet'
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-primary-orange bg-primary-orange/5 text-primary-orange'
+                        : 'border-light-gray-border hover:border-primary-orange/30'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <FileText className="w-5 h-5" />
                       <div>
                         <h3 className="font-medium">From Order Sheet</h3>
-                        <p className="text-sm text-gray-600">Deduct materials based on existing order</p>
+                        <p className="text-sm text-body">Deduct materials based on existing order</p>
                       </div>
                     </div>
                   </button>
@@ -97,15 +99,15 @@ const MaterialDeduction = () => {
                     onClick={() => handleDeductionTypeChange('direct')}
                     className={`p-4 rounded-lg border-2 text-left transition-colors ${
                       deductionType === 'direct'
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-gray-200 hover:border-gray-300'
+                        ? 'border-primary-orange bg-primary-orange/5 text-primary-orange'
+                        : 'border-light-gray-border hover:border-primary-orange/30'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <Minus className="w-5 h-5" />
                       <div>
                         <h3 className="font-medium">Direct Deduction</h3>
-                        <p className="text-sm text-gray-600">Manual inventory deduction</p>
+                        <p className="text-sm text-body">Manual inventory deduction</p>
                       </div>
                     </div>
                   </button>
@@ -115,31 +117,31 @@ const MaterialDeduction = () => {
               {/* Basic Information */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="deductionDate" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="deductionDate" className="block text-sm font-medium text-secondary-blue mb-2">
                     Deduction Date
                   </label>
                   <div className="relative">
                     <input
                       type="date"
                       id="deductionDate"
-                      className="form-input"
+                      className="form-input-mica"
                       value={formData.deductionDate}
                       onChange={(e) => handleInputChange('deductionDate', e.target.value)}
                       required
                     />
-                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 text-body w-5 h-5 pointer-events-none" />
                   </div>
                 </div>
 
                 {deductionType === 'order-sheet' && (
                   <div>
-                    <label htmlFor="orderSheetRef" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="orderSheetRef" className="block text-sm font-medium text-secondary-blue mb-2">
                       Order Sheet Reference
                     </label>
                     <input
                       type="text"
                       id="orderSheetRef"
-                      className="form-input"
+                      className="form-input-mica"
                       placeholder="Enter order reference number"
                       value={formData.orderSheetRef}
                       onChange={(e) => handleInputChange('orderSheetRef', e.target.value)}
@@ -148,36 +150,47 @@ const MaterialDeduction = () => {
                   </div>
                 )}
 
-                {deductionType === 'direct' && (
-                  <div>
-                    <label htmlFor="deductedBy" className="block text-sm font-medium text-gray-700 mb-2">
-                      Deducted By
-                    </label>
-                    <input
-                      type="text"
-                      id="deductedBy"
-                      className="form-input"
-                      placeholder="Enter staff name"
-                      value={formData.deductedBy}
-                      onChange={(e) => handleInputChange('deductedBy', e.target.value)}
-                      required
-                    />
-                  </div>
-                )}
+                <div>
+                  <label htmlFor="invoiceNumber" className="block text-sm font-medium text-secondary-blue mb-2">
+                    Invoice Number
+                  </label>
+                  <input
+                    type="text"
+                    id="invoiceNumber"
+                    className="form-input-mica"
+                    placeholder="Enter invoice number"
+                    value={formData.invoiceNumber}
+                    onChange={(e) => handleInputChange('invoiceNumber', e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="truckNumber" className="block text-sm font-medium text-secondary-blue mb-2">
+                    Truck Number
+                  </label>
+                  <input
+                    type="text"
+                    id="truckNumber"
+                    className="form-input-mica"
+                    placeholder="Enter truck number"
+                    value={formData.truckNumber}
+                    onChange={(e) => handleInputChange('truckNumber', e.target.value)}
+                  />
+                </div>
               </div>
 
               {/* Material Details */}
               <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-secondary">Material Details</h3>
+                <h3 className="text-lg font-semibold text-secondary-blue">Material Details</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label htmlFor="materialType" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="materialType" className="block text-sm font-medium text-secondary-blue mb-2">
                       Material Type
                     </label>
                     <select
                       id="materialType"
-                      className="form-select"
+                      className="form-select-mica"
                       value={formData.materialType}
                       onChange={(e) => handleInputChange('materialType', e.target.value)}
                       required
@@ -190,12 +203,12 @@ const MaterialDeduction = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="reason" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="reason" className="block text-sm font-medium text-secondary-blue mb-2">
                       Reason for Deduction
                     </label>
                     <select
                       id="reason"
-                      className="form-select"
+                      className="form-select-mica"
                       value={formData.reason}
                       onChange={(e) => handleInputChange('reason', e.target.value)}
                       required
@@ -211,14 +224,14 @@ const MaterialDeduction = () => {
                 {/* Quantity - side by side */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="quantity" className="block text-sm font-medium text-secondary-blue mb-2">
                       Quantity to Deduct
                     </label>
                     <div className="flex gap-2">
                       <input
                         type="number"
                         id="quantity"
-                        className="form-input flex-1"
+                        className="form-input-mica flex-1"
                         placeholder="0.00"
                         step="0.01"
                         min="0"
@@ -227,7 +240,7 @@ const MaterialDeduction = () => {
                         required
                       />
                       <select
-                        className="form-select w-24"
+                        className="form-select-mica w-24"
                         value={formData.unit}
                         onChange={(e) => handleInputChange('unit', e.target.value)}
                       >
@@ -242,8 +255,8 @@ const MaterialDeduction = () => {
 
                   <div className="flex items-end">
                     <div className="w-full">
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p className="text-sm text-blue-800">
+                      <div className="bg-primary-orange/5 border border-primary-orange/20 rounded-lg p-4">
+                        <p className="text-sm text-primary-orange">
                           <strong>Available Stock:</strong> 250.5 kg
                           <br />
                           <strong>After Deduction:</strong> {
@@ -260,20 +273,20 @@ const MaterialDeduction = () => {
 
               {/* Additional Information */}
               {deductionType === 'order-sheet' && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-800 mb-3">Order Sheet Information</h4>
+                <div className="bg-light-gray-bg border border-light-gray-border rounded-lg p-4">
+                  <h4 className="font-medium text-secondary-blue mb-3">Order Sheet Information</h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
-                      <span className="text-gray-600">Customer:</span>
-                      <p className="font-medium">ABC Industries Ltd</p>
+                      <span className="text-body">Customer:</span>
+                      <p className="font-medium text-secondary-blue">ABC Industries Ltd</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Order Date:</span>
-                      <p className="font-medium">2024-01-15</p>
+                      <span className="text-body">Order Date:</span>
+                      <p className="font-medium text-secondary-blue">2024-01-15</p>
                     </div>
                     <div>
-                      <span className="text-gray-600">Total Quantity:</span>
-                      <p className="font-medium">500 kg</p>
+                      <span className="text-body">Total Quantity:</span>
+                      <p className="font-medium text-secondary-blue">500 kg</p>
                     </div>
                   </div>
                 </div>
@@ -281,12 +294,12 @@ const MaterialDeduction = () => {
 
               {/* Notes */}
               <div>
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="notes" className="block text-sm font-medium text-secondary-blue mb-2">
                   Additional Notes (Optional)
                 </label>
                 <textarea
                   id="notes"
-                  className="form-textarea"
+                  className="form-textarea-mica"
                   rows={3}
                   placeholder="Any additional notes about this deduction..."
                   value={formData.notes}
@@ -298,7 +311,7 @@ const MaterialDeduction = () => {
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-secondary-mica"
                   onClick={() => {
                     setFormData({
                       deductionDate: '',
@@ -307,14 +320,15 @@ const MaterialDeduction = () => {
                       quantity: '',
                       unit: 'kg',
                       reason: '',
-                      deductedBy: '',
+                      invoiceNumber: '',
+                      truckNumber: '',
                       notes: ''
                     });
                   }}
                 >
                   Clear Form
                 </button>
-                <button type="submit" className="btn-primary">
+                <button type="submit" className="btn-primary-mica">
                   Record Deduction
                 </button>
               </div>

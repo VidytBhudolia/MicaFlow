@@ -6,23 +6,43 @@
 
 @layer components {
   .form-input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+    @apply w-full px-3 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange focus:border-transparent;
+  }
+  
+  .form-input-mica {
+    @apply w-full px-3 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange focus:border-transparent bg-white-bg text-secondary-blue;
   }
   
   .form-textarea {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none;
+    @apply w-full px-3 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange focus:border-transparent resize-none;
+  }
+  
+  .form-textarea-mica {
+    @apply w-full px-3 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange focus:border-transparent resize-none bg-white-bg text-secondary-blue;
   }
   
   .form-select {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-white;
+    @apply w-full px-3 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange focus:border-transparent bg-white-bg;
+  }
+  
+  .form-select-mica {
+    @apply w-full px-3 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange focus:border-transparent bg-white-bg text-secondary-blue;
   }
   
   .btn-primary {
-    @apply bg-primary text-white px-4 py-2 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors;
+    @apply bg-primary-orange text-white px-4 py-2 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-primary-orange focus:ring-offset-2 transition-colors;
+  }
+  
+  .btn-primary-mica {
+    @apply bg-primary-orange text-white px-4 py-2 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-primary-orange focus:ring-offset-2 transition-colors;
   }
   
   .btn-secondary {
-    @apply bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors;
+    @apply bg-white-bg text-secondary-blue border border-secondary-blue px-4 py-2 rounded-md hover:bg-light-gray-bg focus:outline-none focus:ring-2 focus:ring-secondary-blue focus:ring-offset-2 transition-colors;
+  }
+  
+  .btn-secondary-mica {
+    @apply bg-white-bg text-secondary-blue border border-secondary-blue px-4 py-2 rounded-md hover:bg-light-gray-bg focus:outline-none focus:ring-2 focus:ring-secondary-blue focus:ring-offset-2 transition-colors;
   }
   
   .btn-danger {

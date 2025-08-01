@@ -10,6 +10,13 @@ export default {
         primary: "#FE6B00",
         secondary: "#212B36",
         tertiary: "#F5BA31",
+        'primary-orange': '#FE6B00',
+        'secondary-blue': '#212B36',
+        'tertiary-gold': '#F5BA31',
+        'body': '#6B7280',
+        'white-bg': '#FFFFFF',
+        'light-gray-bg': '#F9FAFB',
+        'light-gray-border': '#E5E7EB',
         gray: {
           50: "#F9FAFB",
           100: "#F3F4F6",

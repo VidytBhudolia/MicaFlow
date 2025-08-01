@@ -6,7 +6,6 @@ const RawMaterialPurchase = () => {
   const [formData, setFormData] = useState({
     purchaseDate: '',
     supplierName: '',
-    materialType: '',
     quantity: '',
     unit: 'kg',
     unitPrice: '',
@@ -14,6 +13,14 @@ const RawMaterialPurchase = () => {
     invoiceNumber: '',
     notes: ''
   });
+
+  // Mock data - In real app, this would come from Management page
+  const suppliers = [
+    { id: 1, name: 'Mica Industries Ltd', defaultUnit: 'kg' },
+    { id: 2, name: 'Premium Mica Co.', defaultUnit: '50kg' }
+  ];
+
+  const unitOptions = ['kg', '50kg', 'tonne'];
 
   const handleInputChange = (field, value) => {
     setFormData(prev => {
@@ -36,55 +43,57 @@ const RawMaterialPurchase = () => {
   };
 
   return (
-    <div id="raw-material-purchase" className="">
+    <div id="raw-material-purchase" className="bg-light-gray-bg min-h-screen">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-secondary mb-2">Raw Material Purchase Entry</h1>
-          <p className="text-gray-600">Record new raw material purchases and supplier transactions</p>
+          <h1 className="text-3xl font-bold text-secondary-blue mb-2">Raw Material Purchase Entry</h1>
+          <p className="text-body">Record new raw material purchases and supplier transactions</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-md p-6 lg:p-8">
+      <div className="bg-white-bg rounded-2xl shadow-md p-6 lg:p-8 border border-light-gray-border">
         <form onSubmit={handleSubmit} className="space-y-6">
               {/* Purchase Date and Supplier */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 <div>
-                  <label htmlFor="purchaseDate" className="block text-sm font-medium text-gray-700 mb-2">
-                    Purchase Date
+                  <label htmlFor="purchaseDate" className="block text-sm font-medium text-secondary-blue mb-2">
+                    Date
                   </label>
                   <div className="relative">
                     <input
                       type="date"
                       id="purchaseDate"
-                      className="form-input"
+                      className="form-input-mica"
                       value={formData.purchaseDate}
                       onChange={(e) => handleInputChange('purchaseDate', e.target.value)}
                       required
                     />
-                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+                    <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 text-body w-5 h-5 pointer-events-none" />
                   </div>
                 </div>
 
                 <div>
-                  <label htmlFor="supplierName" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="supplierName" className="block text-sm font-medium text-secondary-blue mb-2">
                     Supplier Name
                   </label>
                   <div className="flex gap-2">
                     <select
                       id="supplierName"
-                      className="form-select flex-1"
+                      className="form-select-mica flex-1"
                       value={formData.supplierName}
                       onChange={(e) => handleInputChange('supplierName', e.target.value)}
                       required
                     >
                       <option value="">Select Supplier</option>
-                      <option value="Supplier A">Supplier A</option>
-                      <option value="Supplier B">Supplier B</option>
-                      <option value="Supplier C">Supplier C</option>
+                      {suppliers.map(supplier => (
+                        <option key={supplier.id} value={supplier.name}>
+                          {supplier.name}
+                        </option>
+                      ))}
                     </select>
                     <Link
                       to="/management"
-                      className="btn-secondary flex items-center px-3"
+                      className="btn-secondary-mica flex items-center px-3"
                       title="Add New Supplier"
                     >
                       <Plus className="w-4 h-4" />
@@ -93,36 +102,49 @@ const RawMaterialPurchase = () => {
                 </div>
               </div>
 
-              {/* Material Details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Quantity, Unit, and Invoice Number */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6">
                 <div>
-                  <label htmlFor="materialType" className="block text-sm font-medium text-gray-700 mb-2">
-                    Material Type
+                  <label htmlFor="quantity" className="block text-sm font-medium text-secondary-blue mb-2">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    id="quantity"
+                    className="form-input-mica"
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0"
+                    value={formData.quantity}
+                    onChange={(e) => handleInputChange('quantity', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="unit" className="block text-sm font-medium text-secondary-blue mb-2">
+                    Unit
                   </label>
                   <select
-                    id="materialType"
-                    className="form-select"
-                    value={formData.materialType}
-                    onChange={(e) => handleInputChange('materialType', e.target.value)}
-                    required
+                    id="unit"
+                    className="form-select-mica"
+                    value={formData.unit}
+                    onChange={(e) => handleInputChange('unit', e.target.value)}
                   >
-                    <option value="">Select Material Type</option>
-                    <option value="Raw Mica">Raw Mica</option>
-                    <option value="Mica Sheets">Mica Sheets</option>
-                    <option value="Mica Powder">Mica Powder</option>
-                    <option value="Mica Flakes">Mica Flakes</option>
-                    <option value="Industrial Mica">Industrial Mica</option>
+                    {unitOptions.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label htmlFor="invoiceNumber" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="invoiceNumber" className="block text-sm font-medium text-secondary-blue mb-2">
                     Invoice Number
                   </label>
                   <input
                     type="text"
                     id="invoiceNumber"
-                    className="form-input"
+                    className="form-input-mica"
                     placeholder="Invoice Number"
                     value={formData.invoiceNumber}
                     onChange={(e) => handleInputChange('invoiceNumber', e.target.value)}
@@ -131,45 +153,16 @@ const RawMaterialPurchase = () => {
                 </div>
               </div>
 
-              {/* Quantity and Unit side by side */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Unit Price and Total Amount */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 <div>
-                  <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-2">
-                    Quantity
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      id="quantity"
-                      className="form-input flex-1"
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      value={formData.quantity}
-                      onChange={(e) => handleInputChange('quantity', e.target.value)}
-                      required
-                    />
-                    <select
-                      className="form-select w-24"
-                      value={formData.unit}
-                      onChange={(e) => handleInputChange('unit', e.target.value)}
-                    >
-                      <option value="kg">kg</option>
-                      <option value="ton">ton</option>
-                      <option value="lb">lb</option>
-                      <option value="g">g</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="unitPrice" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="unitPrice" className="block text-sm font-medium text-secondary-blue mb-2">
                     Unit Price (₹)
                   </label>
                   <input
                     type="number"
                     id="unitPrice"
-                    className="form-input"
+                    className="form-input-mica"
                     placeholder="0.00"
                     step="0.01"
                     min="0"
@@ -178,18 +171,15 @@ const RawMaterialPurchase = () => {
                     required
                   />
                 </div>
-              </div>
 
-              {/* Total Amount */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="totalAmount" className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor="totalAmount" className="block text-sm font-medium text-secondary-blue mb-2">
                     Total Amount (₹)
                   </label>
                   <input
                     type="text"
                     id="totalAmount"
-                    className="form-input bg-gray-50"
+                    className="form-input-mica bg-light-gray-bg"
                     value={formData.totalAmount}
                     readOnly
                   />
@@ -198,12 +188,12 @@ const RawMaterialPurchase = () => {
 
               {/* Notes */}
               <div>
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="notes" className="block text-sm font-medium text-secondary-blue mb-2">
                   Notes (Optional)
                 </label>
                 <textarea
                   id="notes"
-                  className="form-textarea"
+                  className="form-textarea-mica"
                   rows={3}
                   placeholder="Additional notes about the purchase..."
                   value={formData.notes}
@@ -215,11 +205,10 @@ const RawMaterialPurchase = () => {
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-secondary-mica"
                   onClick={() => setFormData({
                     purchaseDate: '',
                     supplierName: '',
-                    materialType: '',
                     quantity: '',
                     unit: 'kg',
                     unitPrice: '',
@@ -230,7 +219,7 @@ const RawMaterialPurchase = () => {
                 >
                   Clear Form
                 </button>
-                <button type="submit" className="btn-primary rounded-full">
+                <button type="submit" className="btn-primary-mica">
                   Record Purchase
                 </button>
               </div>

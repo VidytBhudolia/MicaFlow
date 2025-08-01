@@ -29,21 +29,21 @@ const InventoryAnalytics = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'good': return 'text-green-600 bg-green-100';
-      case 'low': return 'text-orange-600 bg-orange-100';
+      case 'low': return 'text-primary-orange bg-orange-100';
       case 'critical': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
+      default: return 'text-body bg-light-gray-bg';
     }
   };
 
   const StatCard = ({ title, value, icon: Icon, color, subtitle }) => (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className="text-sm font-medium text-body">{title}</p>
           <p className={`text-2xl font-bold ${color}`}>{value}</p>
-          {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+          {subtitle && <p className="text-sm text-body mt-1">{subtitle}</p>}
         </div>
-        <div className={`p-3 rounded-full ${color.replace('text', 'bg').replace('600', '100')}`}>
+        <div className={`p-3 rounded-full ${color.includes('primary-orange') ? 'bg-orange-100' : color.includes('secondary-blue') ? 'bg-blue-100' : color.includes('tertiary-gold') ? 'bg-yellow-100' : 'bg-light-gray-bg'}`}>
           <Icon className={`w-6 h-6 ${color}`} />
         </div>
       </div>
@@ -85,7 +85,7 @@ const InventoryAnalytics = () => {
               title="Total Stock"
               value={`${dashboardData.totalStock} kg`}
               icon={Package}
-              color="text-blue-600"
+              color="text-secondary-blue"
               subtitle="Across all materials"
             />
             <StatCard
@@ -99,24 +99,24 @@ const InventoryAnalytics = () => {
               title="Low Stock Items"
               value={dashboardData.lowStockItems}
               icon={AlertTriangle}
-              color="text-orange-600"
+              color="text-primary-orange"
               subtitle="Items below minimum"
             />
             <StatCard
               title="Monthly Turnover"
               value={`₹${(dashboardData.monthlyTurnover / 100000).toFixed(1)}L`}
               icon={TrendingUp}
-              color="text-purple-600"
+              color="text-tertiary-gold"
               subtitle="Revenue this month"
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             {/* Stock Levels Chart */}
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
               <div className="flex items-center gap-2 mb-4">
-                <BarChart3 className="w-5 h-5 text-primary" />
-                <h3 className="text-lg font-semibold text-secondary">Stock Levels</h3>
+                <BarChart3 className="w-5 h-5 text-secondary-blue" />
+                <h3 className="text-lg font-semibold text-secondary-blue">Stock Levels</h3>
               </div>
               
               <div className="space-y-4">

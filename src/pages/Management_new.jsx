@@ -4,25 +4,27 @@ import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown } from 
 const Management = () => {
   const [activeTab, setActiveTab] = useState('suppliers');
   
-  // Supplier Management State
+  // Supplier Management State (from SupplierManagement.jsx)
   const [suppliers, setSuppliers] = useState([
     {
       id: 1,
       name: 'Mica Industries Ltd',
-      contactPerson: 'John Smith',
-      phoneNumber: '+91-9876543210',
+      contact: '+91-9876543210',
       email: 'contact@micaindustries.com',
       address: '123 Industrial Area, Jharkhand',
-      defaultUnit: 'kg'
+      materialType: 'Raw Mica',
+      defaultUnit: 'kg',
+      status: 'active'
     },
     {
       id: 2,
       name: 'Premium Mica Co.',
-      contactPerson: 'Jane Doe',
-      phoneNumber: '+91-9876543211',
+      contact: '+91-9876543211',
       email: 'info@premiummica.com',
       address: '456 Mining District, Rajasthan',
-      defaultUnit: '50kg'
+      materialType: 'Mica Sheets',
+      defaultUnit: '50kg',
+      status: 'active'
     }
   ]);
   const [isSupplierFormOpen, setIsSupplierFormOpen] = useState(false);
@@ -30,11 +32,12 @@ const Management = () => {
   const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
   const [supplierFormData, setSupplierFormData] = useState({
     name: '',
-    contactPerson: '',
-    phoneNumber: '',
+    contact: '',
     email: '',
     address: '',
-    defaultUnit: 'kg'
+    materialType: '',
+    defaultUnit: 'kg',
+    status: 'active'
   });
 
   // Categories Management State
@@ -65,6 +68,12 @@ const Management = () => {
     defaultUnit: 'kg'
   });
   const [showSubProductForm, setShowSubProductForm] = useState(false);
+
+  // Users Management State
+  const [users, setUsers] = useState([
+    { id: 1, name: 'Admin User', role: 'Administrator', email: 'admin@micaflow.com', status: 'Active' },
+    { id: 2, name: 'Manager', role: 'Manager', email: 'manager@micaflow.com', status: 'Active' }
+  ]);
 
   // Supplier Management Functions
   const handleSupplierSubmit = async (e) => {
@@ -109,11 +118,12 @@ const Management = () => {
   const resetSupplierForm = () => {
     setSupplierFormData({
       name: '',
-      contactPerson: '',
-      phoneNumber: '',
+      contact: '',
       email: '',
       address: '',
-      defaultUnit: 'kg'
+      materialType: '',
+      defaultUnit: 'kg',
+      status: 'active'
     });
     setEditingSupplier(null);
     setIsSupplierFormOpen(false);
@@ -125,7 +135,7 @@ const Management = () => {
 
   const filteredSuppliers = suppliers.filter(supplier =>
     supplier.name?.toLowerCase().includes(supplierSearchTerm.toLowerCase()) ||
-    supplier.contactPerson?.toLowerCase().includes(supplierSearchTerm.toLowerCase())
+    supplier.materialType?.toLowerCase().includes(supplierSearchTerm.toLowerCase())
   );
 
   // Categories Management Functions
@@ -221,9 +231,10 @@ const Management = () => {
             <thead className="bg-light-gray-bg">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Contact Person</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Phone</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Contact</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Material Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Default Unit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -236,9 +247,18 @@ const Management = () => {
                       <div className="text-sm text-body">{supplier.email}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.contactPerson}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.phoneNumber}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.contact}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.materialType}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.defaultUnit}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      supplier.status === 'active' 
+                        ? 'bg-green-100 text-green-600' 
+                        : 'bg-red-100 text-red-600'
+                    }`}>
+                      {supplier.status}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleSupplierEdit(supplier)}
@@ -282,31 +302,19 @@ const Management = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-secondary-blue mb-2">
-                  Contact Person
+                  Contact Number
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   className="form-input-mica"
-                  value={supplierFormData.contactPerson}
-                  onChange={(e) => handleSupplierInputChange('contactPerson', e.target.value)}
+                  value={supplierFormData.contact}
+                  onChange={(e) => handleSupplierInputChange('contact', e.target.value)}
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-secondary-blue mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="text"
-                  className="form-input-mica"
-                  value={supplierFormData.phoneNumber}
-                  onChange={(e) => handleSupplierInputChange('phoneNumber', e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-secondary-blue mb-2">
-                  Email Address
+                  Email
                 </label>
                 <input
                   type="email"
@@ -329,6 +337,23 @@ const Management = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-secondary-blue mb-2">
+                  Material Type
+                </label>
+                <select
+                  className="form-select-mica"
+                  value={supplierFormData.materialType}
+                  onChange={(e) => handleSupplierInputChange('materialType', e.target.value)}
+                  required
+                >
+                  <option value="">Select Material Type</option>
+                  <option value="Raw Mica">Raw Mica</option>
+                  <option value="Mica Sheets">Mica Sheets</option>
+                  <option value="Mica Powder">Mica Powder</option>
+                  <option value="Mica Flakes">Mica Flakes</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">
                   Default Unit
                 </label>
                 <select
@@ -340,6 +365,19 @@ const Management = () => {
                   <option value="kg">kg</option>
                   <option value="50kg">50kg</option>
                   <option value="tonne">tonne</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">
+                  Status
+                </label>
+                <select
+                  className="form-select-mica"
+                  value={supplierFormData.status}
+                  onChange={(e) => handleSupplierInputChange('status', e.target.value)}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
                 </select>
               </div>
               <div className="flex space-x-3 pt-4">
@@ -441,8 +479,9 @@ const Management = () => {
                   {category.subProducts.map(subProduct => (
                     <div key={subProduct.id} className="flex justify-between items-center p-3 bg-light-gray-bg rounded-lg border border-light-gray-border">
                       <div>
+                        <p className="font-medium text-secondary-blue">{subProduct.name}</p>
                         <p className="text-sm text-body">
-                          {subProduct.defaultBagWeight}{subProduct.defaultUnit}
+                          Default: {subProduct.defaultBagWeight}{subProduct.defaultUnit}
                         </p>
                       </div>
                       <div className="flex gap-2">
@@ -475,7 +514,7 @@ const Management = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-secondary-blue mb-2">
-                  Sub-Category Name
+                  Sub-Product Name
                 </label>
                 <input
                   type="text"
@@ -536,6 +575,49 @@ const Management = () => {
     </div>
   );
 
+  const renderUsersTab = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold text-secondary-blue">User Management</h3>
+        <button 
+          className="btn-primary-mica flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          Add User
+        </button>
+      </div>
+
+      <div className="grid gap-4">
+        {users.map(user => (
+          <div key={user.id} className="bg-white-bg border border-light-gray-border rounded-lg p-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className="font-semibold text-secondary-blue">{user.name}</h4>
+                <p className="text-sm text-body">Role: {user.role}</p>
+                <p className="text-sm text-body">Email: {user.email}</p>
+                <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                  user.status === 'Active' 
+                    ? 'bg-green-100 text-green-600' 
+                    : 'bg-red-100 text-red-600'
+                }`}>
+                  {user.status}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button className="p-2 text-secondary-blue hover:text-primary-orange rounded-lg border border-light-gray-border">
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button className="p-2 text-red-600 hover:text-red-900 rounded-lg border border-light-gray-border">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div id="management" className="bg-light-gray-bg min-h-screen">
       <div className="flex items-center gap-3 mb-6">
@@ -570,12 +652,23 @@ const Management = () => {
             >
               Categories
             </button>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`px-6 py-4 text-sm font-medium border-b-2 ${
+                activeTab === 'users'
+                  ? 'border-primary-orange text-primary-orange'
+                  : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'
+              }`}
+            >
+              Users
+            </button>
           </nav>
         </div>
 
         <div className="p-6">
           {activeTab === 'suppliers' && renderSuppliersTab()}
           {activeTab === 'categories' && renderCategoriesTab()}
+          {activeTab === 'users' && renderUsersTab()}
         </div>
       </div>
     </div>
