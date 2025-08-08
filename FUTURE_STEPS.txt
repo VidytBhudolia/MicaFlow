@@ -1,0 +1,51 @@
+MicaFlow – Future Steps & Checklist
+==================================
+
+1) Auth + Firestore (already in progress)
+- Ensure Anonymous Auth is enabled in Firebase Console.
+- Keep AUTH-based Firestore rules (micaflow-app/firestore.rules) published.
+
+2) firebaseConfig.js
+- Ensure you: initialize app, getFirestore, enable IndexedDB persistence, getAuth, signInAnonymously, and export { app, db, auth }.
+- Verify in browser console that you see "Signed in as <uid>".
+
+3) Data service caching (fetch-once)
+- Confirm src/services/dataService.js uses the remote adapter with localStorage cache:
+  - getSuppliers/getCategories: read cache first; hit Firestore on first load or when forceRefresh.
+  - add/update/delete methods: refresh cache after write.
+  - expose refresh('suppliers'|'categories') for UI refresh buttons.
+
+4) Supplier defaults UI (Management)
+- In Management Suppliers form, include defaultBagWeight (number) and defaultUnit (kg|tonne).
+- Display preview like: "Default: 50 kg" when weight=50 and unit=kg.
+- Persist both fields to Firestore via dataService.
+
+5) Use defaults in pages
+- DailyProcessing & RawMaterialPurchase: when supplier changes, default unit label = `${defaultBagWeight} kg` if provided; else 'kg'.
+- Always convert to quantityKg before saving (unitToKg helper) and store only quantityKg in Firestore.
+
+6) Purchases collection
+- Use purchasesService in src/services/firebaseServices.js.
+- dataService.addPurchase should call purchasesService.addPurchase.
+- Confirm Firestore rules include /purchases.
+
+7) Hosting on Spark (no Storage, no Functions)
+- Build: npm install; npm run build
+- Deploy rules + hosting from micaflow-app directory containing firebase.json:
+  PowerShell:
+  - cd E:\gemini_learn\Mica\micaflow-app
+  - firebase deploy --only "hosting,firestore:rules"
+
+8) GitHub Actions (optional)
+- Ensure workflow uses build: npm ci || npm install && npm run build (if no lockfile)
+- Deploy step: firebase deploy --only "hosting,firestore:rules"
+
+9) QA
+- Add supplier + category; verify in Firestore.
+- Add sub-product; verify categories/{id}/subProducts.
+- Submit daily processing & purchases; check quantityKg fields present.
+
+10) Nice-to-have (later)
+- UI refresh buttons for Suppliers/Categories to force remote fetch.
+- Inventory endpoints & calculations (client-side first).
+- Error toasts for Firestore failures.
