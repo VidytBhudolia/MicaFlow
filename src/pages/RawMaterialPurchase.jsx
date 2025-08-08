@@ -1,10 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, Plus } from 'lucide-react';
+import { dataService } from '../services/dataService';
+
+const unitToKg = (qty, unit) => {
+  const u = String(unit || '').toLowerCase();
+  if (u === 'tonne' || u === 'tonnes' || u === 't') return (parseFloat(qty) || 0) * 1000;
+  const m = u.match(/^(\d+(?:\.[\d]+)?)\s*kg$/) || u.match(/^(\d+(?:\.[\d]+)?)kg$/);
+  if (m) return (parseFloat(qty) || 0) * parseFloat(m[1]);
+  return parseFloat(qty) || 0;
+};
 
 const RawMaterialPurchase = () => {
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [formData, setFormData] = useState({
-    purchaseDate: '',
+    purchaseDate: todayStr,
     supplierName: '',
     quantity: '',
     unit: 'kg',
@@ -14,18 +24,59 @@ const RawMaterialPurchase = () => {
     notes: ''
   });
 
-  // Mock data - In real app, this would come from Management page
-  const suppliers = [
-    { id: 1, name: 'Mica Industries Ltd', defaultUnit: 'kg' },
-    { id: 2, name: 'Premium Mica Co.', defaultUnit: '50kg' }
-  ];
+  const [suppliers, setSuppliers] = useState([]);
 
-  const unitOptions = ['kg', '50kg', 'tonne'];
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const s = await dataService.getSuppliers();
+        if (mounted) setSuppliers(Array.isArray(s) ? s : []);
+      } catch { if (mounted) setSuppliers([]); }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const getSupplierUnitOptions = () => {
+    // Allow kg, tonne and supplier bag size if available (e.g., 50kg)
+    const opts = new Set(['kg', 'tonne']);
+    const sel = suppliers.find(s => s.name === formData.supplierName);
+    if (sel) {
+      const w = sel.defaultBagWeight;
+      const u = String(sel.defaultUnit || 'kg').toLowerCase();
+      if (Number.isFinite(Number(w)) && (u === 'kg' || u === 'tonne')) {
+        if (u === 'kg') opts.add(`${w}kg`);
+        if (u === 'tonne') opts.add(`${w * 1000}kg`); // represent as kg denomination
+      } else {
+        // legacy '50kg' stored in unit
+        const m = u.match(/^(\d+(?:\.[\d]+)?)\s*kg$/) || u.match(/^(\d+(?:\.[\d]+)?)kg$/);
+        if (m) opts.add(`${parseFloat(m[1])}kg`);
+      }
+    }
+    return Array.from(opts);
+  };
+
+  const unitOptions = getSupplierUnitOptions();
 
   const handleInputChange = (field, value) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
-      // Auto-calculate total amount
+
+      if (field === 'supplierName') {
+        const sel = suppliers.find(s => s.name === value);
+        if (sel) {
+          // Prefer explicit bag spec over plain unit
+          const w = sel.defaultBagWeight;
+          const u = String(sel.defaultUnit || 'kg').toLowerCase();
+          if (Number.isFinite(Number(w))) {
+            updated.unit = u === 'kg' ? `${w}kg` : u === 'tonne' ? `${w * 1000}kg` : 'kg';
+          } else {
+            updated.unit = sel.defaultUnit || 'kg';
+          }
+        }
+      }
+
+      // Auto-calc total
       if (field === 'quantity' || field === 'unitPrice') {
         const qty = parseFloat(updated.quantity) || 0;
         const price = parseFloat(updated.unitPrice) || 0;
@@ -35,11 +86,17 @@ const RawMaterialPurchase = () => {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Raw Material Purchase Data:', formData);
-    // TODO: Integrate with Firebase
-    alert('Raw material purchase entry submitted successfully!');
+    const qtyKg = unitToKg(formData.quantity, formData.unit);
+    const payload = { ...formData, quantityKg: qtyKg };
+    try {
+      await dataService.addPurchase(payload);
+      alert('Raw material purchase entry submitted successfully!');
+    } catch (err) {
+      console.error('Failed to save purchase', err);
+      alert('Failed to save purchase');
+    }
   };
 
   return (

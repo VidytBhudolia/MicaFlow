@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Calendar, FileText, Minus } from 'lucide-react';
 
 const MaterialDeduction = () => {
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [deductionType, setDeductionType] = useState('order-sheet');
   const [formData, setFormData] = useState({
-    deductionDate: '',
+    deductionDate: todayStr,
     orderSheetRef: '',
     materialType: '',
     quantity: '',

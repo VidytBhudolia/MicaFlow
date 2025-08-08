@@ -1,9 +1,40 @@
-import React, { useState } from 'react';
-import { Calendar, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Calendar } from 'lucide-react';
+import { dataService } from '../services/dataService';
+
+const unitToKg = (qty, unit) => {
+  const u = (unit || '').toLowerCase();
+  if (u === 'tonne' || u === 'tonnes' || u === 't') return (parseFloat(qty) || 0) * 1000;
+  if (/^([0-9]*\.?[0-9]+)\s*kg$/.test(u)) {
+    const m = u.match(/^([0-9]*\.?[0-9]+)\s*kg$/);
+    return (parseFloat(qty) || 0) * parseFloat(m[1]);
+  }
+  return parseFloat(qty) || 0; // default kg
+};
+
+const normalizeBagSpec = (sp) => {
+  let weight = parseFloat(sp.defaultBagWeight);
+  let unit = (sp.defaultUnit || 'kg').toLowerCase();
+  // If unit includes number like '50kg', parse it
+  const m = typeof sp.defaultUnit === 'string' && sp.defaultUnit.toLowerCase().match(/^([0-9]*\.?[0-9]+)\s*kg$/);
+  if ((Number.isNaN(weight) || !weight) && m) {
+    weight = parseFloat(m[1]);
+    unit = 'kg';
+  }
+  // If unit itself is like '50kg', normalize
+  const m2 = unit.match(/^([0-9]*\.?[0-9]+)\s*kg$/);
+  if (m2) {
+    weight = weight || parseFloat(m2[1]);
+    unit = 'kg';
+  }
+  if (unit !== 'kg' && unit !== 'tonne') unit = 'kg';
+  return { weight: weight || 0, unit };
+};
 
 const DailyProcessing = () => {
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [formData, setFormData] = useState({
-    processingDate: '',
+    processingDate: todayStr,
     rawMaterialUsed: '',
     rawMaterialUnit: 'kg',
     supplierOfRawMaterial: '',
@@ -19,72 +50,123 @@ const DailyProcessing = () => {
 
   const [producedProducts, setProducedProducts] = useState([]);
 
-  // Mock data - In real app, this would come from Management page
-  const suppliers = [
-    { id: 1, name: 'Mica Industries Ltd', defaultUnit: 'kg' },
-    { id: 2, name: 'Premium Mica Co.', defaultUnit: '50kg' }
-  ];
+  const [suppliers, setSuppliers] = useState([]);
+  const [categories, setCategories] = useState([]);
 
-  const categories = [
-    { 
-      id: 1, 
-      name: 'Mica Sheets', 
-      subProducts: [
-        { id: 11, name: '12+ Mesh', defaultBagWeight: 50, defaultUnit: '50kg' },
-        { id: 12, name: '16+ Mesh', defaultBagWeight: 50, defaultUnit: '50kg' }
-      ]
-    },
-    { 
-      id: 2, 
-      name: 'Mica Powder', 
-      subProducts: [
-        { id: 21, name: 'Fine Powder', defaultBagWeight: 25, defaultUnit: 'kg' },
-        { id: 22, name: 'Coarse Powder', defaultBagWeight: 50, defaultUnit: '50kg' }
-      ]
+  const getSupplierUnitOptions = () => {
+    const opts = new Set(['kg', 'tonne']);
+    const sel = suppliers.find(s => s.name === formData.supplierOfRawMaterial);
+    if (sel) {
+      const w = sel.defaultBagWeight;
+      const u = String(sel.defaultUnit || 'kg').toLowerCase();
+      if (Number.isFinite(Number(w))) {
+        if (u === 'kg') opts.add(`${w}kg`);
+        else if (u === 'tonne') opts.add(`${w * 1000}kg`);
+      } else {
+        const m = u.match(/^(\d+(?:\.[0-9]+)?)\s*kg$/) || u.match(/^(\d+(?:\.[0-9]+)?)kg$/);
+        if (m) opts.add(`${parseFloat(m[1])}kg`);
+      }
     }
-  ];
+    return Array.from(opts);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const s = await dataService.getSuppliers();
+        if (mounted) setSuppliers(Array.isArray(s) ? s : []);
+      } catch { if (mounted) setSuppliers([]); }
+      try {
+        const c = await dataService.getCategories();
+        if (mounted) setCategories(Array.isArray(c) ? c : []);
+      } catch { if (mounted) setCategories([]); }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
-      
+
       // When product category changes, initialize produced products
       if (field === 'productCategory') {
-        const selectedCategory = categories.find(cat => cat.id.toString() === value);
+        const selectedCategory = categories.find(cat => `${cat.id}` === `${value}`);
         if (selectedCategory) {
-          const initialProducts = selectedCategory.subProducts.map(subProduct => ({
-            id: subProduct.id,
-            name: subProduct.name,
-            quantityProduced: '',
-            unit: subProduct.defaultUnit
-          }));
+          const initialProducts = (selectedCategory.subProducts || []).map(subProduct => {
+            const { weight, unit } = normalizeBagSpec(subProduct);
+            return {
+              id: subProduct.id,
+              name: subProduct.name,
+              categoryId: selectedCategory.id,
+              bagWeight: weight,
+              bagUnit: unit,
+              mode: 'bags',
+              bags: '',
+              kg: '',
+              tonne: ''
+            };
+          });
           setProducedProducts(initialProducts);
         } else {
           setProducedProducts([]);
         }
       }
-      
+
+      // When supplier changes, set raw material unit default from supplier (prefer bag spec)
+      if (field === 'supplierOfRawMaterial') {
+        const sel = suppliers.find(s => s.name === value);
+        if (sel) {
+          const w = sel.defaultBagWeight;
+          const u = String(sel.defaultUnit || 'kg').toLowerCase();
+          if (Number.isFinite(Number(w))) {
+            updated.rawMaterialUnit = u === 'kg' ? `${w}kg` : u === 'tonne' ? `${w * 1000}kg` : 'kg';
+          } else {
+            updated.rawMaterialUnit = sel.defaultUnit || 'kg';
+          }
+        }
+      }
+
       return updated;
     });
   };
 
-  const handleProductChange = (index, field, value) => {
-    setProducedProducts(prev => 
-      prev.map((product, i) => 
-        i === index ? { ...product, [field]: value } : product
-      )
-    );
+  const setProductMode = (index, mode) => {
+    setProducedProducts(prev => prev.map((p, i) => i === index ? { ...p, mode } : p));
   };
 
-  const handleSubmit = (e) => {
+  const handleProductField = (index, patch) => {
+    setProducedProducts(prev => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    const enrichedProducts = producedProducts.map(p => {
+      let quantityKg = 0;
+      if (p.mode === 'bags') {
+        const perBagKg = p.bagUnit === 'tonne' ? (parseFloat(p.bagWeight) || 0) * 1000 : (parseFloat(p.bagWeight) || 0);
+        quantityKg = (parseFloat(p.bags) || 0) * perBagKg;
+      } else if (p.mode === 'kg') {
+        quantityKg = parseFloat(p.kg) || 0;
+      } else if (p.mode === 'tonne') {
+        quantityKg = (parseFloat(p.tonne) || 0) * 1000;
+      }
+      return { ...p, quantityKg };
+    });
+
     const submissionData = {
       ...formData,
-      producedProducts
+      // Normalize raw material used to kg as well
+      rawMaterialUsedKg: unitToKg(formData.rawMaterialUsed, formData.rawMaterialUnit),
+      producedProducts: enrichedProducts
     };
-    console.log('Daily Processing Data:', submissionData);
-    // TODO: Integrate with Firebase
-    console.log('Daily processing update submitted successfully!');
+
+    try {
+      await dataService.addProduction(submissionData);
+      console.log('Daily processing saved');
+    } catch (e) {
+      console.error('Failed to save daily processing', e);
+    }
   };
 
   return (
@@ -167,9 +249,9 @@ const DailyProcessing = () => {
                 value={formData.rawMaterialUnit}
                 onChange={(e) => handleInputChange('rawMaterialUnit', e.target.value)}
               >
-                <option value="kg">kg</option>
-                <option value="50kg">50kg</option>
-                <option value="tonne">tonne</option>
+                {getSupplierUnitOptions().map(u => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -188,7 +270,7 @@ const DailyProcessing = () => {
             >
               <option value="">Select Product Category</option>
               {categories.map(category => (
-                <option key={category.id} value={category.id}>
+                <option key={category.id} value={`${category.id}`}>
                   {category.name}
                 </option>
               ))}
@@ -198,43 +280,101 @@ const DailyProcessing = () => {
           {/* Produced Products Section - Dynamic based on selected category */}
           {producedProducts.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-secondary-blue mb-4">Produced Products</h3>
+              <h3 className="text-lg font-semibold text-secondary-blue mb-2">Produced Products</h3>
               <div className="space-y-4">
                 {producedProducts.map((product, index) => (
                   <div key={product.id} className="p-4 border border-light-gray-border rounded-lg">
-                    <h4 className="text-lg font-medium text-secondary-blue mb-4">{product.name}</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-secondary-blue mb-2">
-                          Quantity Produced
-                        </label>
-                        <input
-                          type="number"
-                          className="form-input-mica"
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
-                          value={product.quantityProduced}
-                          onChange={(e) => handleProductChange(index, 'quantityProduced', e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-secondary-blue mb-2">
-                          Production Unit
-                        </label>
-                        <select
-                          className="form-select-mica"
-                          value={product.unit}
-                          onChange={(e) => handleProductChange(index, 'unit', e.target.value)}
-                        >
-                          <option value="kg">kg</option>
-                          <option value="50kg">50kg</option>
-                          <option value="35kg">35kg</option>
-                          <option value="tonne">tonne</option>
-                        </select>
-                      </div>
+                    <div className="mb-3">
+                      <h4 className="text-sm font-semibold text-secondary-blue">{product.name}</h4>
+                      <p className="text-xs text-body">Default bag: {product.bagWeight} {product.bagUnit}</p>
                     </div>
+
+                    {/* Entry mode selector */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-xs border ${product.mode === 'bags' ? 'bg-primary text-white border-primary' : 'bg-white-bg text-secondary-blue border-light-gray-border'}`}
+                        onClick={() => setProductMode(index, 'bags')}
+                      >
+                        Bags ({product.bagWeight} {product.bagUnit})
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-xs border ${product.mode === 'kg' ? 'bg-primary text-white border-primary' : 'bg-white-bg text-secondary-blue border-light-gray-border'}`}
+                        onClick={() => setProductMode(index, 'kg')}
+                      >
+                        kg
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-xs border ${product.mode === 'tonne' ? 'bg-primary text-white border-primary' : 'bg-white-bg text-secondary-blue border-light-gray-border'}`}
+                        onClick={() => setProductMode(index, 'tonne')}
+                      >
+                        tonne
+                      </button>
+                    </div>
+
+                    {/* Inputs per mode */}
+                    {product.mode === 'bags' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-secondary-blue mb-2">Number of bags</label>
+                          <input
+                            type="number"
+                            className="form-input-mica"
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                            value={product.bags}
+                            onChange={(e) => handleProductField(index, { bags: e.target.value })}
+                            required
+                          />
+                        </div>
+                        <div className="self-end text-sm text-body">
+                          {(() => {
+                            const perBagKg = product.bagUnit === 'tonne' ? (parseFloat(product.bagWeight) || 0) * 1000 : (parseFloat(product.bagWeight) || 0);
+                            const approxKg = (parseFloat(product.bags || '0') * perBagKg).toFixed(2);
+                            return <>Approx. total = {approxKg} kg</>;
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {product.mode === 'kg' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-secondary-blue mb-2">Quantity (kg)</label>
+                          <input
+                            type="number"
+                            className="form-input-mica"
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                            value={product.kg}
+                            onChange={(e) => handleProductField(index, { kg: e.target.value })}
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {product.mode === 'tonne' && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-secondary-blue mb-2">Quantity (tonne)</label>
+                          <input
+                            type="number"
+                            className="form-input-mica"
+                            placeholder="0.000"
+                            step="0.001"
+                            min="0"
+                            value={product.tonne}
+                            onChange={(e) => handleProductField(index, { tonne: e.target.value })}
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -355,7 +495,7 @@ const DailyProcessing = () => {
               className="btn-secondary-mica"
               onClick={() => {
                 setFormData({
-                  processingDate: '',
+                  processingDate: todayStr,
                   rawMaterialUsed: '',
                   rawMaterialUnit: 'kg',
                   supplierOfRawMaterial: '',

@@ -9,7 +9,6 @@ import MaterialDeduction from './pages/MaterialDeduction';
 import OrderSheet from './pages/OrderSheet';
 import InventoryAnalytics from './pages/InventoryAnalytics';
 import LogsAdjustments from './pages/LogsAdjustments';
-import SupplierManagement from './pages/SupplierManagement';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
 import './App.css';
@@ -31,7 +30,6 @@ function App() {
             <Route path="/order-sheet" element={<OrderSheet />} />
             <Route path="/inventory-analytics" element={<InventoryAnalytics />} />
             <Route path="/logs-adjustments" element={<LogsAdjustments />} />
-            <Route path="/supplier-management" element={<SupplierManagement />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/reports" element={<Reports />} />
           </Routes>

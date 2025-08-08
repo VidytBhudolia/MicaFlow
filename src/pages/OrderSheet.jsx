@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Calendar, Plus, Trash2, FileText } from 'lucide-react';
 
 const OrderSheet = () => {
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [formData, setFormData] = useState({
-    orderDate: '',
+    orderDate: todayStr,
     customerName: '',
     customerContact: '',
     customerAddress: '',

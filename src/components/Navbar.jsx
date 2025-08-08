@@ -9,7 +9,6 @@ const Navbar = () => {
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Raw Material Purchase', path: '/raw-material-purchase' },
     { name: 'Daily Processing', path: '/daily-processing' },
-    { name: 'Supplier Management', path: '/supplier-management' },
     { name: 'Inventory', path: '/inventory' },
     { name: 'Reports', path: '/reports' },
     { name: 'Management', path: '/management' },

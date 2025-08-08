@@ -281,3 +281,72 @@ export const productionService = {
     }
   }
 };
+
+// Categories Service (categories collection + subcollection 'subProducts')
+export const categoriesService = {
+  async addCategory(name) {
+    const now = new Date().toISOString();
+    const ref = await addDoc(collection(db, 'categories'), { name, createdAt: now, updatedAt: now });
+    return { id: ref.id, name, subProducts: [] };
+  },
+  async getCategories() {
+    const catsSnap = await getDocs(collection(db, 'categories'));
+    const cats = [];
+    for (const d of catsSnap.docs) {
+      const catId = d.id;
+      const catData = d.data();
+      const subsSnap = await getDocs(collection(db, 'categories', catId, 'subProducts'));
+      const subProducts = subsSnap.docs.map(s => ({ id: s.id, ...s.data() }));
+      cats.push({ id: catId, name: catData.name, subProducts });
+    }
+    return cats;
+  },
+  async updateCategoryName(categoryId, name) {
+    const ref = doc(db, 'categories', categoryId);
+    await updateDoc(ref, { name, updatedAt: new Date().toISOString() });
+    return { id: categoryId, name };
+  },
+  async deleteCategory(categoryId) {
+    // delete subProducts then category
+    const subsSnap = await getDocs(collection(db, 'categories', categoryId, 'subProducts'));
+    await Promise.all(subsSnap.docs.map(s => deleteDoc(doc(db, 'categories', categoryId, 'subProducts', s.id))));
+    await deleteDoc(doc(db, 'categories', categoryId));
+    return categoryId;
+  },
+  async addSubProduct(categoryId, subProduct) {
+    const now = new Date().toISOString();
+    const payload = { name: subProduct.name, defaultBagWeight: subProduct.defaultBagWeight, defaultUnit: subProduct.defaultUnit, createdAt: now, updatedAt: now };
+    const ref = await addDoc(collection(db, 'categories', categoryId, 'subProducts'), payload);
+    return { id: ref.id, ...payload };
+  },
+  async updateSubProduct(categoryId, subProductId, updates) {
+    const ref = doc(db, 'categories', categoryId, 'subProducts', subProductId);
+    await updateDoc(ref, { ...updates, updatedAt: new Date().toISOString() });
+    return { id: subProductId, ...updates };
+  },
+  async deleteSubProduct(categoryId, subProductId) {
+    await deleteDoc(doc(db, 'categories', categoryId, 'subProducts', subProductId));
+    return subProductId;
+  }
+};
+
+// New: Purchases Service (dedicated 'purchases' collection)
+export const purchasesService = {
+  async addPurchase(data) {
+    const now = new Date().toISOString();
+    const ref = await addDoc(collection(db, 'purchases'), { ...data, createdAt: now, updatedAt: now });
+    return { id: ref.id, ...data };
+  },
+  async getPurchases() {
+    const snap = await getDocs(collection(db, 'purchases'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  async updatePurchase(id, patch) {
+    await updateDoc(doc(db, 'purchases', id), { ...patch, updatedAt: new Date().toISOString() });
+    return { id, ...patch };
+  },
+  async deletePurchase(id) {
+    await deleteDoc(doc(db, 'purchases', id));
+    return id;
+  }
+};

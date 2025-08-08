@@ -1,30 +1,15 @@
-import React, { useState } from 'react';
-import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react';
+import { dataService } from '../services/dataService';
+
+// Helper to generate unique IDs reliably
+const getUUID = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 const Management = () => {
   const [activeTab, setActiveTab] = useState('suppliers');
   
   // Supplier Management State
-  const [suppliers, setSuppliers] = useState([
-    {
-      id: 1,
-      name: 'Mica Industries Ltd',
-      contactPerson: 'John Smith',
-      phoneNumber: '+91-9876543210',
-      email: 'contact@micaindustries.com',
-      address: '123 Industrial Area, Jharkhand',
-      defaultUnit: 'kg'
-    },
-    {
-      id: 2,
-      name: 'Premium Mica Co.',
-      contactPerson: 'Jane Doe',
-      phoneNumber: '+91-9876543211',
-      email: 'info@premiummica.com',
-      address: '456 Mining District, Rajasthan',
-      defaultUnit: '50kg'
-    }
-  ]);
+  const [suppliers, setSuppliers] = useState([]);
   const [isSupplierFormOpen, setIsSupplierFormOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
@@ -34,28 +19,13 @@ const Management = () => {
     phoneNumber: '',
     email: '',
     address: '',
+    // Default raw material bag spec
+    defaultBagWeight: '',
     defaultUnit: 'kg'
   });
 
   // Categories Management State
-  const [categories, setCategories] = useState([
-    { 
-      id: 1, 
-      name: 'Mica Sheets', 
-      subProducts: [
-        { id: 11, name: '12+ Mesh', defaultBagWeight: 50, defaultUnit: '50kg' },
-        { id: 12, name: '16+ Mesh', defaultBagWeight: 50, defaultUnit: '50kg' }
-      ]
-    },
-    { 
-      id: 2, 
-      name: 'Mica Powder', 
-      subProducts: [
-        { id: 21, name: 'Fine Powder', defaultBagWeight: 25, defaultUnit: 'kg' },
-        { id: 22, name: 'Coarse Powder', defaultBagWeight: 50, defaultUnit: '50kg' }
-      ]
-    }
-  ]);
+  const [categories, setCategories] = useState([]);
   const [expandedCategory, setExpandedCategory] = useState(null);
   const [categoryForm, setCategoryForm] = useState({ name: '' });
   const [subProductForm, setSubProductForm] = useState({
@@ -65,45 +35,104 @@ const Management = () => {
     defaultUnit: 'kg'
   });
   const [showSubProductForm, setShowSubProductForm] = useState(false);
+  // New: loading/error for adding category
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [addCategoryError, setAddCategoryError] = useState('');
+
+  // Category rename & sub-product edit modals
+  const [isCategoryEditOpen, setIsCategoryEditOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryEditName, setCategoryEditName] = useState('');
+  const [isSubProductEditOpen, setIsSubProductEditOpen] = useState(false);
+  const [editingSubProduct, setEditingSubProduct] = useState(null);
+  const [subProductEditForm, setSubProductEditForm] = useState({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
+
+  // Confirm modal state
+  const [confirmConfig, setConfirmConfig] = useState({ open: false, title: '', message: '', onConfirm: null });
+  const openConfirm = (title, message, onConfirm) => setConfirmConfig({ open: true, title, message, onConfirm });
+  const closeConfirm = () => setConfirmConfig({ open: false, title: '', message: '', onConfirm: null });
+
+  // Load suppliers & categories from dataService (supports async/remote)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const s = await dataService.getSuppliers();
+        if (mounted) setSuppliers(Array.isArray(s) ? s : []);
+      } catch { if (mounted) setSuppliers([]); }
+      try {
+        const c = await dataService.getCategories();
+        if (mounted) setCategories(Array.isArray(c) ? c : []);
+      } catch { if (mounted) setCategories([]); }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // New: persist via dataService on change
+  useEffect(() => {
+    try { dataService.setSuppliers(suppliers); } catch {}
+  }, [suppliers]);
+  useEffect(() => {
+    try { dataService.setCategories(categories); } catch {}
+  }, [categories]);
 
   // Supplier Management Functions
   const handleSupplierSubmit = async (e) => {
     e.preventDefault();
     try {
+      const payload = { ...supplierFormData };
+      // Coerce weight to number when present
+      if (payload.defaultBagWeight !== '' && payload.defaultBagWeight !== undefined) {
+        payload.defaultBagWeight = parseFloat(payload.defaultBagWeight);
+      }
       if (editingSupplier) {
-        setSuppliers(prev => prev.map(supplier => 
-          supplier.id === editingSupplier.id 
-            ? { ...supplierFormData, id: editingSupplier.id }
-            : supplier
-        ));
+        const updated = { ...payload, id: editingSupplier.id };
+        await dataService.updateSupplier(editingSupplier.id, updated);
+        setSuppliers(prev => prev.map(s => s.id === editingSupplier.id ? updated : s));
       } else {
-        const newSupplier = {
-          ...supplierFormData,
-          id: Date.now()
-        };
-        setSuppliers(prev => [...prev, newSupplier]);
+        const created = await dataService.addSupplier(payload);
+        setSuppliers(prev => [...prev, created]);
       }
       resetSupplierForm();
     } catch (error) {
       console.error('Error saving supplier:', error);
+      try { alert(`Failed to save supplier: ${error?.message || 'Unknown error'}`); } catch {}
     }
   };
 
   const handleSupplierEdit = (supplier) => {
     setEditingSupplier(supplier);
-    setSupplierFormData(supplier);
+    setSupplierFormData({
+      name: supplier.name || '',
+      contactPerson: supplier.contactPerson || '',
+      phoneNumber: supplier.phoneNumber || '',
+      email: supplier.email || '',
+      address: supplier.address || '',
+      defaultBagWeight: supplier.defaultBagWeight ?? // prefer normalized field
+        (() => {
+          // fallback: parse like '50kg'
+          const u = String(supplier.defaultUnit || '').toLowerCase();
+          const m = u.match(/^(\d+(?:\.\d+)?)\s*kg$/) || u.match(/^(\d+(?:\.\d+)?)kg$/);
+          return m ? parseFloat(m[1]) : '';
+        })(),
+      defaultUnit: (String(supplier.defaultUnit || 'kg').toLowerCase().includes('tonne') ? 'tonne' : 'kg')
+    });
     setIsSupplierFormOpen(true);
   };
 
   const handleSupplierDelete = async (supplierId) => {
-    // TODO: Replace with custom modal
-    if (window.confirm('Are you sure you want to delete this supplier?')) {
-      try {
-        setSuppliers(prev => prev.filter(supplier => supplier.id !== supplierId));
-      } catch (error) {
-        console.error('Error deleting supplier:', error);
+    openConfirm(
+      'Delete Supplier',
+      'Are you sure you want to delete this supplier?',
+      async () => {
+        try {
+          await dataService.deleteSupplier(supplierId);
+          setSuppliers(prev => prev.filter(supplier => supplier.id !== supplierId));
+        } catch (error) {
+          console.error('Error deleting supplier:', error);
+        } finally { closeConfirm(); }
       }
-    }
+    );
   };
 
   const resetSupplierForm = () => {
@@ -113,6 +142,7 @@ const Management = () => {
       phoneNumber: '',
       email: '',
       address: '',
+      defaultBagWeight: '',
       defaultUnit: 'kg'
     });
     setEditingSupplier(null);
@@ -128,60 +158,148 @@ const Management = () => {
     supplier.contactPerson?.toLowerCase().includes(supplierSearchTerm.toLowerCase())
   );
 
+  const supplierDefaultDisplay = (s) => {
+    const w = s.defaultBagWeight;
+    const u = String(s.defaultUnit || 'kg');
+    if (w && Number.isFinite(Number(w))) return `${w} ${u}`;
+    // fallback for legacy '50kg'
+    const m = String(u).toLowerCase().match(/^(\d+(?:\.\d+)?)\s*kg$/) || String(u).toLowerCase().match(/^(\d+(?:\.\d+)?)kg$/);
+    if (m) return `${m[1]} kg`;
+    return u;
+  };
+
   // Categories Management Functions
-  const handleAddCategory = () => {
-    if (categoryForm.name.trim()) {
-      const newCategory = {
-        id: Date.now(),
-        name: categoryForm.name,
-        subProducts: []
-      };
-      setCategories(prev => [...prev, newCategory]);
+  const handleAddCategory = async () => {
+    const name = categoryForm.name.trim();
+    if (!name) {
+      setAddCategoryError('Please enter a category name.');
+      return;
+    }
+    setAddCategoryError('');
+    setIsAddingCategory(true);
+    try {
+      const created = await dataService.addCategory(name);
+      setCategories(prev => [...prev, created]);
       setCategoryForm({ name: '' });
+    } catch (error) {
+      console.error('Error adding category:', error);
+      setAddCategoryError(error?.message || 'Failed to add category. Check console for details.');
+      // Optional visible alert for now to ensure the user sees failures
+      try { alert(`Add Category failed: ${error?.message || 'Unknown error'}`); } catch {}
+    } finally {
+      setIsAddingCategory(false);
     }
   };
 
   const handleDeleteCategory = (categoryId) => {
-    // TODO: Replace with custom modal
-    if (window.confirm('Are you sure you want to delete this category and all its sub-products?')) {
-      setCategories(prev => prev.filter(cat => cat.id !== categoryId));
-    }
+    openConfirm(
+      'Delete Category',
+      'Are you sure you want to delete this category and all its sub-products?',
+      async () => {
+        await dataService.deleteCategory(categoryId);
+        setCategories(prev => prev.filter(cat => cat.id !== categoryId));
+        closeConfirm();
+      }
+    );
   };
 
-  const handleAddSubProduct = () => {
+  const handleAddSubProduct = async () => {
     if (subProductForm.name.trim() && subProductForm.defaultBagWeight) {
-      const newSubProduct = {
-        id: Date.now(),
-        name: subProductForm.name,
-        defaultBagWeight: parseInt(subProductForm.defaultBagWeight),
+      const payload = {
+        name: subProductForm.name.trim(),
+        defaultBagWeight: parseFloat(subProductForm.defaultBagWeight),
         defaultUnit: subProductForm.defaultUnit
       };
-      
+      const created = await dataService.addSubProduct(subProductForm.categoryId, payload);
       setCategories(prev => prev.map(category => 
         category.id === subProductForm.categoryId 
-          ? { ...category, subProducts: [...category.subProducts, newSubProduct] }
+          ? { ...category, subProducts: [...category.subProducts, created] }
           : category
       ));
-      
-      setSubProductForm({
-        categoryId: null,
-        name: '',
-        defaultBagWeight: '',
-        defaultUnit: 'kg'
-      });
+      setSubProductForm({ categoryId: null, name: '', defaultBagWeight: '', defaultUnit: 'kg' });
       setShowSubProductForm(false);
     }
   };
 
   const handleDeleteSubProduct = (categoryId, subProductId) => {
-    // TODO: Replace with custom modal
-    if (window.confirm('Are you sure you want to delete this sub-product?')) {
-      setCategories(prev => prev.map(category => 
-        category.id === categoryId 
-          ? { ...category, subProducts: category.subProducts.filter(sub => sub.id !== subProductId) }
-          : category
-      ));
-    }
+    openConfirm(
+      'Delete Sub-Product',
+      'Are you sure you want to delete this sub-product?',
+      async () => {
+        await dataService.deleteSubProduct(categoryId, subProductId);
+        setCategories(prev => prev.map(category => 
+          category.id === categoryId 
+            ? { ...category, subProducts: category.subProducts.filter(sub => sub.id !== subProductId) }
+            : category
+        ));
+        closeConfirm();
+      }
+    );
+  };
+
+  // New: Handlers for category rename
+  const openCategoryEdit = (category) => {
+    setEditingCategory(category);
+    setCategoryEditName(category.name);
+    setIsCategoryEditOpen(true);
+  };
+
+  const handleUpdateCategoryName = async () => {
+    const name = categoryEditName.trim();
+    if (!name || !editingCategory) return;
+    await dataService.updateCategoryName(editingCategory.id, name);
+    setCategories(prev => prev.map(cat => (cat.id === editingCategory.id ? { ...cat, name } : cat)));
+    setIsCategoryEditOpen(false);
+    setEditingCategory(null);
+    setCategoryEditName('');
+  };
+
+  const closeCategoryEdit = () => {
+    setIsCategoryEditOpen(false);
+    setEditingCategory(null);
+    setCategoryEditName('');
+  };
+
+  // New: Handlers for sub-product edit
+  const openSubProductEdit = (categoryId, subProduct) => {
+    setEditingSubProduct({ categoryId, id: subProduct.id });
+    setSubProductEditForm({
+      name: subProduct.name || '',
+      defaultBagWeight: subProduct.defaultBagWeight !== undefined ? String(subProduct.defaultBagWeight) : '',
+      defaultUnit: subProduct.defaultUnit || 'kg',
+    });
+    setIsSubProductEditOpen(true);
+  };
+
+  const handleUpdateSubProduct = async () => {
+    if (!editingSubProduct) return;
+    const name = subProductEditForm.name.trim();
+    const weightNum = parseFloat(subProductEditForm.defaultBagWeight);
+    if (!name || Number.isNaN(weightNum)) return;
+
+    await dataService.updateSubProduct(editingSubProduct.categoryId, editingSubProduct.id, { name, defaultBagWeight: weightNum, defaultUnit: subProductEditForm.defaultUnit });
+
+    setCategories(prev => prev.map(cat =>
+      cat.id === editingSubProduct.categoryId
+        ? {
+            ...cat,
+            subProducts: cat.subProducts.map(sp =>
+              sp.id === editingSubProduct.id
+                ? { ...sp, name, defaultBagWeight: weightNum, defaultUnit: subProductEditForm.defaultUnit }
+                : sp
+            ),
+          }
+        : cat
+    ));
+    setIsSubProductEditOpen(false);
+    setEditingSubProduct(null);
+    setSubProductEditForm({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
+  };
+
+  const closeSubProductEdit = () => {
+    setIsSubProductEditOpen(false);
+    setEditingSubProduct(null);
+    setSubProductEditForm({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
   };
 
   const renderSuppliersTab = () => (
@@ -191,13 +309,26 @@ const Management = () => {
           <h3 className="text-lg font-semibold text-secondary-blue">Supplier Management</h3>
           <p className="text-body">Manage your mica suppliers and their information</p>
         </div>
-        <button
-          onClick={() => setIsSupplierFormOpen(true)}
-          className="btn-primary-mica flex items-center space-x-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Supplier</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              const fresh = await dataService.refresh('suppliers');
+              setSuppliers(Array.isArray(fresh) ? fresh : []);
+            }}
+            className="btn-secondary-mica flex items-center gap-2"
+            title="Refresh suppliers from server"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+          <button
+            onClick={() => setIsSupplierFormOpen(true)}
+            className="btn-primary-mica flex items-center space-x-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Supplier</span>
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -223,7 +354,7 @@ const Management = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Contact Person</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Phone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Default Unit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Default Raw Unit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -238,7 +369,7 @@ const Management = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.contactPerson}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.phoneNumber}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplier.defaultUnit}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{supplierDefaultDisplay(supplier)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleSupplierEdit(supplier)}
@@ -327,21 +458,35 @@ const Management = () => {
                   onChange={(e) => handleSupplierInputChange('address', e.target.value)}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-secondary-blue mb-2">
-                  Default Unit
-                </label>
-                <select
-                  className="form-select-mica"
-                  value={supplierFormData.defaultUnit}
-                  onChange={(e) => handleSupplierInputChange('defaultUnit', e.target.value)}
-                  required
-                >
-                  <option value="kg">kg</option>
-                  <option value="50kg">50kg</option>
-                  <option value="tonne">tonne</option>
-                </select>
+
+              {/* New: Default raw material bag specification */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-secondary-blue mb-2">Default Bag Weight</label>
+                  <input
+                    type="number"
+                    className="form-input-mica"
+                    placeholder="e.g., 50"
+                    min="0"
+                    step="0.01"
+                    value={supplierFormData.defaultBagWeight}
+                    onChange={(e) => handleSupplierInputChange('defaultBagWeight', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-secondary-blue mb-2">Unit</label>
+                  <select
+                    className="form-select-mica"
+                    value={supplierFormData.defaultUnit}
+                    onChange={(e) => handleSupplierInputChange('defaultUnit', e.target.value)}
+                    required
+                  >
+                    <option value="kg">kg</option>
+                    <option value="tonne">tonne</option>
+                  </select>
+                </div>
               </div>
+
               <div className="flex space-x-3 pt-4">
                 <button type="submit" className="btn-primary-mica flex-1">
                   {editingSupplier ? 'Update' : 'Add'} Supplier
@@ -378,21 +523,36 @@ const Management = () => {
               value={categoryForm.name}
               onChange={(e) => setCategoryForm({ name: e.target.value })}
             />
+            {addCategoryError && (
+              <p className="mt-2 text-sm text-red-600">{addCategoryError}</p>
+            )}
           </div>
           <button 
             onClick={handleAddCategory}
-            className="btn-primary-mica flex items-center gap-2"
+            disabled={isAddingCategory || !categoryForm.name.trim()}
+            className={`btn-primary-mica flex items-center gap-2 ${isAddingCategory ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
             <Plus className="w-4 h-4" />
-            Add Category
+            {isAddingCategory ? 'Adding...' : 'Add Category'}
           </button>
         </div>
       </div>
 
       {/* Existing Categories Section */}
       <div className="bg-white-bg rounded-lg shadow-md border border-light-gray-border">
-        <div className="p-6 border-b border-light-gray-border">
+        <div className="p-6 border-b border-light-gray-border flex items-center justify-between">
           <h3 className="text-lg font-semibold text-secondary-blue">Existing Product Categories</h3>
+          <button
+            onClick={async () => {
+              const fresh = await dataService.refresh('categories');
+              setCategories(Array.isArray(fresh) ? fresh : []);
+            }}
+            className="btn-secondary-mica flex items-center gap-2"
+            title="Refresh categories from server"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
         </div>
         <div className="divide-y divide-light-gray-border">
           {categories.map(category => (
@@ -414,7 +574,10 @@ const Management = () => {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button className="p-2 text-secondary-blue hover:text-primary-orange rounded-lg border border-light-gray-border">
+                  <button 
+                    onClick={() => openCategoryEdit(category)}
+                    className="p-2 text-secondary-blue hover:text-primary-orange rounded-lg border border-light-gray-border"
+                  >
                     <Edit className="w-4 h-4" />
                   </button>
                   <button 
@@ -441,12 +604,16 @@ const Management = () => {
                   {category.subProducts.map(subProduct => (
                     <div key={subProduct.id} className="flex justify-between items-center p-3 bg-light-gray-bg rounded-lg border border-light-gray-border">
                       <div>
+                        <p className="font-medium text-secondary-blue">{subProduct.name}</p>
                         <p className="text-sm text-body">
-                          {subProduct.defaultBagWeight}{subProduct.defaultUnit}
+                          Default: {subProduct.defaultBagWeight} {subProduct.defaultUnit}
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        <button className="p-1 text-secondary-blue hover:text-primary-orange">
+                        <button
+                          onClick={() => openSubProductEdit(category.id, subProduct)}
+                          className="p-1 text-secondary-blue hover:text-primary-orange"
+                        >
                           <Edit className="w-3 h-3" />
                         </button>
                         <button 
@@ -507,8 +674,6 @@ const Management = () => {
                   onChange={(e) => setSubProductForm({ ...subProductForm, defaultUnit: e.target.value })}
                 >
                   <option value="kg">kg</option>
-                  <option value="50kg">50kg</option>
-                  <option value="35kg">35kg</option>
                   <option value="tonne">tonne</option>
                 </select>
               </div>
@@ -578,6 +743,88 @@ const Management = () => {
           {activeTab === 'categories' && renderCategoriesTab()}
         </div>
       </div>
+
+      {/* New: generic confirm modal */}
+      {confirmConfig.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white-bg rounded-lg p-6 w-full max-w-md border border-light-gray-border">
+            <h2 className="text-xl font-semibold text-secondary-blue mb-2">{confirmConfig.title}</h2>
+            <p className="text-body mb-4">{confirmConfig.message}</p>
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary-mica" onClick={closeConfirm}>Cancel</button>
+              <button className="btn-primary-mica" onClick={() => confirmConfig.onConfirm?.()}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New: edit category modal */}
+      {isCategoryEditOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white-bg rounded-lg p-6 w-full max-w-md border border-light-gray-border">
+            <h2 className="text-xl font-semibold text-secondary-blue mb-4">Edit Category Name</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Category Name</label>
+                <input
+                  type="text"
+                  className="form-input-mica"
+                  value={categoryEditName}
+                  onChange={(e) => setCategoryEditName(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button className="btn-secondary-mica" onClick={closeCategoryEdit}>Cancel</button>
+                <button className="btn-primary-mica" onClick={handleUpdateCategoryName}>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New: edit sub-product modal */}
+      {isSubProductEditOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white-bg rounded-lg p-6 w-full max-w-md border border-light-gray-border">
+            <h2 className="text-xl font-semibold text-secondary-blue mb-4">Edit Sub-Product</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Sub-Product Name</label>
+                <input
+                  type="text"
+                  className="form-input-mica"
+                  value={subProductEditForm.name}
+                  onChange={(e) => setSubProductEditForm({ ...subProductEditForm, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Default Bag Weight</label>
+                <input
+                  type="number"
+                  className="form-input-mica"
+                  value={subProductEditForm.defaultBagWeight}
+                  onChange={(e) => setSubProductEditForm({ ...subProductEditForm, defaultBagWeight: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Default Unit</label>
+                <select
+                  className="form-select-mica"
+                  value={subProductEditForm.defaultUnit}
+                  onChange={(e) => setSubProductEditForm({ ...subProductEditForm, defaultUnit: e.target.value })}
+                >
+                  <option value="kg">kg</option>
+                  <option value="tonne">tonne</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-3">
+                <button className="btn-secondary-mica" onClick={closeSubProductEdit}>Cancel</button>
+                <button className="btn-primary-mica" onClick={handleUpdateSubProduct}>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
