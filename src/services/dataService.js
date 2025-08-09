@@ -1,11 +1,13 @@
 // Lightweight data service abstraction with pluggable backend (localStorage by default)
-import { suppliersService, categoriesService, productionService, purchasesService } from './firebaseServices';
+import { suppliersService, categoriesService, productionService, purchasesService, inventoryService, dailyStatsService } from './firebaseServices';
 
 const USE_FIREBASE = true; // enabled Firestore
 
 const SUPPLIERS_KEY = 'micaflow-suppliers';
 const CATEGORIES_KEY = 'micaflow-categories';
 const CACHE_META_KEY = 'micaflow-cache-meta';
+const PURCHASES_KEY = 'micaflow-purchases';
+const PRODUCTION_KEY = 'micaflow-production';
 
 const safeParse = (str, fallback) => {
   try {
@@ -109,11 +111,14 @@ const local = {
 // Remote backend (Firestore) with local cache layer
 const remote = {
   // Suppliers
-  async getSuppliers({ force = false } = {}) {
+  async getSuppliers(options = {}) {
+    const { force = false, forceRefresh = false } = options;
+    const effectiveForce = force || forceRefresh;
     const cached = readCached(SUPPLIERS_KEY, v => v);
-    if (cached && !force) return cached;
-    const remote = await suppliersService.getSuppliers();
-    return writeCached(SUPPLIERS_KEY, remote, v => v);
+    // Treat empty array as cache miss so we attempt a network fetch (fixes needing manual refresh)
+    if (cached && !effectiveForce && Array.isArray(cached) && cached.length > 0) return cached;
+    const remoteList = await suppliersService.getSuppliers();
+    return writeCached(SUPPLIERS_KEY, remoteList, v => v);
   },
   async setSuppliers(list) { return writeCached(SUPPLIERS_KEY, list, v => v); },
   async addSupplier(s) {
@@ -136,11 +141,14 @@ const remote = {
   },
 
   // Categories
-  async getCategories({ force = false } = {}) {
+  async getCategories(options = {}) {
+    const { force = false, forceRefresh = false } = options;
+    const effectiveForce = force || forceRefresh;
     const cached = readCached(CATEGORIES_KEY, normalizeCategories);
-    if (cached && !force) return cached;
-    const remote = await categoriesService.getCategories();
-    return writeCached(CATEGORIES_KEY, remote, normalizeCategories);
+    // If we have a non-empty cached list and not forced, return it; otherwise fetch remote.
+    if (cached && !effectiveForce && Array.isArray(cached) && cached.length > 0) return cached;
+    const remoteList = await categoriesService.getCategories();
+    return writeCached(CATEGORIES_KEY, remoteList, normalizeCategories);
   },
   async setCategories(list) { return writeCached(CATEGORIES_KEY, list, normalizeCategories); },
   async addCategory(name) {
@@ -181,13 +189,79 @@ const remote = {
   },
 
   // Production & Purchases
-  async addProduction(doc) { return productionService.addProductionBatch(doc); },
-  async addPurchase(doc) { return purchasesService.addPurchase(doc); },
-
-  // Manual refresh entry points
+  async addProduction(production) {
+    // production expected to already have: rawMaterialUsedKg, producedProducts[{quantityKg}], totalProducedKg, lossKg, yieldPercent
+    const enriched = { ...production };
+    if (enriched.totalProducedKg == null) {
+      enriched.totalProducedKg = (enriched.producedProducts||[]).reduce((s,p)=> s + (p.quantityKg||0),0);
+    }
+    if (enriched.lossKg == null) {
+      enriched.lossKg = Math.max(0, (enriched.rawMaterialUsedKg||0) - enriched.totalProducedKg);
+    }
+    if (enriched.yieldPercent == null) {
+      enriched.yieldPercent = (enriched.rawMaterialUsedKg||0) > 0 ? (enriched.totalProducedKg / enriched.rawMaterialUsedKg) * 100 : 0;
+    }
+    // Firestore write
+    const saved = USE_FIREBASE
+      ? await productionService.addProductionBatch(enriched)
+      : await local.addProduction(enriched);
+    if (USE_FIREBASE) {
+      try { await (inventoryService.applyProductionTransaction ? inventoryService.applyProductionTransaction(enriched) : inventoryService.applyProduction(enriched)); } catch (e) { console.warn('Inventory update failed', e); }
+      try { await dailyStatsService.accumulate(enriched); } catch (e) { console.warn('Daily stats update failed', e); }
+    }
+    invalidateCache('production');
+    return saved;
+  },
+  async addPurchase(doc) { 
+    const saved = await purchasesService.addPurchase(doc); 
+    try { 
+      if (doc.supplier || doc.supplierId || doc.supplierName) { 
+        const supplierKey = doc.supplierId || doc.supplierName || doc.supplier; 
+        await inventoryService.upsertDelta(`raw_${supplierKey}`, doc.quantityKg||0); 
+      } 
+    } catch (e) { console.warn('Inventory raw purchase delta failed', e); }
+    return saved; 
+  },
+  // New: getters for dashboard statistics with lightweight cache (always refetch if older than 5 min)
+  async getPurchases({ force = false } = {}) {
+    const ageLimitMs = 5 * 60 * 1000;
+    const meta = getCacheMeta();
+    const cacheValid = meta[PURCHASES_KEY] && (Date.now() - meta[PURCHASES_KEY].ts < ageLimitMs);
+    if (!force && cacheValid) {
+      const cached = readCached(PURCHASES_KEY, v => v);
+      if (cached) return cached;
+    }
+    if (!purchasesService.getPurchases) return [];
+    const list = await purchasesService.getPurchases();
+    return writeCached(PURCHASES_KEY, list, v => v);
+  },
+  async getProductionBatches({ force = false } = {}) {
+    const ageLimitMs = 5 * 60 * 1000;
+    const meta = getCacheMeta();
+    const cacheValid = meta[PRODUCTION_KEY] && (Date.now() - meta[PRODUCTION_KEY].ts < ageLimitMs);
+    if (!force && cacheValid) {
+      const cached = readCached(PRODUCTION_KEY, v => v);
+      if (cached) return cached;
+    }
+    if (!productionService.getProductionBatches) return [];
+    const list = await productionService.getProductionBatches();
+    return writeCached(PRODUCTION_KEY, list, v => v);
+  },
+  async getInventory({ force = false } = {}) {
+    // Always fetch fresh (can add cache later)
+    if (!inventoryService.getInventoryItems) return [];
+    try { return await inventoryService.getInventoryItems(); } catch { return []; }
+  },
+  async getDailyStats({ force = false, days = 30 } = {}) {
+    try { return await dailyStatsService.getDailyStats(days); } catch { return []; }
+  },
   async refresh(key) {
     if (key === 'suppliers') return this.getSuppliers({ force: true });
     if (key === 'categories') return this.getCategories({ force: true });
+    if (key === 'purchases') return this.getPurchases({ force: true });
+    if (key === 'production') return this.getProductionBatches({ force: true });
+    if (key === 'inventory') return this.getInventory({ force: true });
+    if (key === 'daily_stats') return this.getDailyStats({ force: true });
     return null;
   },
 };

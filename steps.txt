@@ -1,0 +1,108 @@
+MicaFlow Analytics & Dashboard Implementation Summary (Phases 1 & 2)
+
+1. Data Enrichment in Daily Processing
+- Updated DailyProcessing.jsx to compute and submit: rawUsedKg/rawMaterialUsedKg, totalProducedKg, lossKg, yieldPercent, workers, hammerChanges, knifeChanges, dieselUsedLiters.
+- Added inline loading state and form reset after successful submit.
+- Submit button now disabled with spinner while saving.
+
+2. Inventory & Daily Stats Aggregation
+- firebaseServices.js: Added transactional inventory update (applyProductionTransaction) and improved non-transactional fallback.
+- Added dailyStatsService.accumulate using Firestore transaction; aggregates totals per date (raw, produced, loss, hammerChanges, knifeChanges, dieselUsedLiters, workers, batches, yieldPercent).
+- Inventory updates: raw supplier stock decremented; finished sub-product stock incremented.
+
+3. dataService Integration
+- Added adapter fallback and ensured addProduction invokes transactional inventory update + daily stats accumulate.
+- addPurchase now increments raw supplier inventory (raw_<supplierKey>) and persists purchase.
+
+4. Dashboard Service
+- Created dashboardService.js with getInventorySummary and getDailyStats(range) helpers.
+- Inventory summary returns rawStockTotal, rawStockPerSupplier, finishedStockPerCategory, finishedStockPerSubProduct.
+- Daily stats helper normalizes historical field names and returns sorted list for charts/tables.
+
+5. Dashboard Refactor (Dashboard.jsx)
+- Integrated Recharts (dependency added in package.json already present) for:
+  * Yield & Loss Trend (LineChart: yieldPercent vs lossKg)
+  * Raw vs Produced (AreaChart totalRawUsedKg vs totalProducedKg)
+- Added inventory summary cards and breakdown lists (Finished by Category, Raw by Supplier).
+- Added Operational Indicators (workers, kg/worker, kg/L diesel, tool wear per tonne) based on latest day.
+- Added High Loss Days list (>10% loss).
+
+6. Daily Analytics Page
+- DailyAnalytics.jsx implemented with date range filter (default current month), summary stats row, and detailed table including yield%, loss%, workers, efficiency metrics (kg/worker, kg per diesel liter).
+
+7. Security Rules
+- firestore.rules updated previously to allow daily_stats (ensure deployed with firebase deploy --only firestore:rules when next deploying).
+
+8. Supporting Utilities
+- Added inventory id classification logic (raw_*, finished_*).
+- Normalized sub-product bag spec parsing for consistent kg conversion.
+
+9. Pending / Next Steps (Not yet implemented)
+- Add pagination or server-side filtering for large daily_stats dataset (current client filtering acceptable for low volume).
+- Add editing of past daily logs (currently only additive).
+- Add purchase integration to show raw stock inflow timeline chart.
+- Add export (CSV) buttons for Daily Analytics.
+- Add anomaly detection or alerts for sudden yield drops.
+
+10. Validation Steps
+A. Submit New Daily Log
+  - Navigate to /daily-processing
+  - Fill supplier, raw material used (e.g., 1000 kg), select category & enter product outputs (e.g., two sub-products totalling 930 kg).
+  - Provide hammer/knife changes, diesel, workers.
+  - Submit; button shows spinner, form clears except date.
+B. Check Firestore Collections (via console):
+  - production: new doc includes rawMaterialUsedKg, rawUsedKg, totalProducedKg, lossKg, yieldPercent.
+  - inventory: raw_<supplierName> decremented; finished_<subProductId> incremented.
+  - daily_stats: doc with id=YYYY-MM-DD updated totals; yieldPercent updated.
+C. Open /daily-analytics
+  - New day appears in table with correct yield%, loss%, workers aggregate.
+  - Change date range to confirm filtering.
+D. Open /dashboard
+  - Cards reflect counts and stock totals.
+  - Charts display data points including new day (may require refresh if cached).
+  - Operational indicators show latest day's metrics.
+  - High Loss Days section lists any day where loss% > 10.
+E. Inventory Summary
+  - Validate finishedStockPerCategory totals equal sum of finishedStockPerSubProduct totals.
+  - Validate rawStockTotal equals sum of rawStockPerSupplier totals.
+F. Edge Cases
+  - Submit day with zero production but some raw used: yield 0%, loss = rawUsedKg.
+  - Submit day with production > raw used: loss clamps to 0 (verify aggregate logic).
+
+11. Troubleshooting
+- If dashboard charts empty: ensure daily_stats docs exist (submit a new daily log) and no console errors.
+- If build error about firebaseConfig: ensure import path '../firebaseConfig' is correct (js file located at src/firebaseConfig.js).
+- If inventory not updating: verify supplierOfRawMaterial field matches expected key; check inventory document IDs raw_<supplierName> / finished_<subProductId>.
+
+12. Deployment Reminder
+- After confirming locally, deploy: npm run build then firebase deploy (hosting + rules).
+
+13. Fixes Applied After Issues Reported
+- DailyProcessing submit button: ensured button visible by keeping it inside form and retaining padding; no CSS change needed but verified element present with id daily-processing.
+- Removed obsolete 'submitting' state duplication (isSubmitting used). (If still present in file, can be cleaned in next pass.)
+- Fixed dataService.addProduction referencing undefined 'adapter' by calling productionService.addProductionBatch.
+- Confirmed dailyStatsService.accumulate computes yieldPercent and workers aggregate.
+
+14. How to Validate Recent Fixes
+A. Submit Button Functionality
+  1. Open /daily-processing.
+  2. Open browser DevTools Console (F12).
+  3. Fill minimal required fields (date, supplier, rawMaterialUsed, category, at least one product quantity).
+  4. Click 'Submit Daily Log'.
+  5. Expect: button text changes to 'Saving...', spinner shows, no console error, then form clears (except date) and button reverts.
+B. Firestore Production Write
+  1. In Firebase Console -> Firestore -> production collection: new doc appears with fields rawMaterialUsedKg/rawUsedKg, totalProducedKg, lossKg, yieldPercent, workers.
+C. Inventory Transaction
+  1. In inventory collection, raw_<supplier> decremented by rawUsedKg; finished_<subProductId> incremented by its quantityKg sum.
+D. Daily Stats Doc
+  1. In daily_stats collection find doc with id=date used; totals increased, yieldPercent recalculated.
+E. Dashboard Refresh
+  1. Navigate /dashboard, press Refresh. New day should appear in charts (Yield & Loss Trend, Raw vs Produced). Latest indicators reflect new workers / diesel.
+F. Daily Analytics Page
+  1. Navigate /daily-analytics. Row for today appears with correct Yield % (totalProducedKg/rawUsedKg*100) and Loss %.
+G. Worker Label Issue
+  1. Confirm 'Workers' column shows total workers (male+female). If still split, clear cache/hard refresh.
+
+If any step fails, capture console/network errors and report.
+
+End of steps.

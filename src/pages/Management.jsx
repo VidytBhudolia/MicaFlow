@@ -4,6 +4,8 @@ import { dataService } from '../services/dataService';
 
 // Helper to generate unique IDs reliably
 const getUUID = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+// Helper to make a slug from category names (for potential Firestore ID uniqueness later)
+const slugify = (str = '') => str.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 
 const Management = () => {
   const [activeTab, setActiveTab] = useState('suppliers');
@@ -52,21 +54,54 @@ const Management = () => {
   const openConfirm = (title, message, onConfirm) => setConfirmConfig({ open: true, title, message, onConfirm });
   const closeConfirm = () => setConfirmConfig({ open: false, title: '', message: '', onConfirm: null });
 
+  // New: loading states
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
+
   // Load suppliers & categories from dataService (supports async/remote)
   useEffect(() => {
     let mounted = true;
-    (async () => {
+    let categoryAttempts = 0;
+
+    const loadSuppliers = async () => {
+      setIsLoadingSuppliers(true);
       try {
         const s = await dataService.getSuppliers();
         if (mounted) setSuppliers(Array.isArray(s) ? s : []);
       } catch { if (mounted) setSuppliers([]); }
+      finally { if (mounted) setIsLoadingSuppliers(false); }
+    };
+
+    const loadCategories = async (force = false) => {
+      if (!mounted) return;
+      setIsLoadingCategories(true);
       try {
-        const c = await dataService.getCategories();
+        const c = await dataService.getCategories(force ? { force: true } : {});
         if (mounted) setCategories(Array.isArray(c) ? c : []);
-      } catch { if (mounted) setCategories([]); }
-    })();
+        if (mounted && (!c || c.length === 0) && categoryAttempts < 2) {
+          categoryAttempts += 1;
+          // Retry once after short delay (covers auth becoming ready just after first call)
+          setTimeout(() => loadCategories(true), 600);
+        }
+      } catch {
+        if (mounted) setCategories([]);
+      } finally {
+        if (mounted) setIsLoadingCategories(false);
+      }
+    };
+
+    loadSuppliers();
+    loadCategories(false);
+
     return () => { mounted = false; };
   }, []);
+
+  // When switching back to Categories tab, if list still empty and not currently loading, fetch once.
+  useEffect(() => {
+    if (activeTab === 'categories' && categories.length === 0 && !isLoadingCategories) {
+      dataService.getCategories({ force: true }).then(c => setCategories(Array.isArray(c) ? c : [])).catch(()=>{});
+    }
+  }, [activeTab]);
 
   // New: persist via dataService on change
   useEffect(() => {
@@ -175,16 +210,22 @@ const Management = () => {
       setAddCategoryError('Please enter a category name.');
       return;
     }
+    // Duplicate (case-insensitive) check (acts as simple uniqueness constraint)
+    const exists = categories.some(c => (c.name || '').trim().toLowerCase() === name.toLowerCase());
+    if (exists) {
+      setAddCategoryError('Category name already exists.');
+      return;
+    }
     setAddCategoryError('');
     setIsAddingCategory(true);
     try {
+      // NOTE: if we later want Firestore-level uniqueness, we can create with a fixed ID = slugify(name)
       const created = await dataService.addCategory(name);
       setCategories(prev => [...prev, created]);
       setCategoryForm({ name: '' });
     } catch (error) {
       console.error('Error adding category:', error);
       setAddCategoryError(error?.message || 'Failed to add category. Check console for details.');
-      // Optional visible alert for now to ensure the user sees failures
       try { alert(`Add Category failed: ${error?.message || 'Unknown error'}`); } catch {}
     } finally {
       setIsAddingCategory(false);
@@ -301,6 +342,10 @@ const Management = () => {
     setEditingSubProduct(null);
     setSubProductEditForm({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
   };
+
+  const Spinner = () => (
+    <span className="inline-block w-4 h-4 border-2 border-primary-orange border-t-transparent rounded-full animate-spin align-middle" aria-label="Loading" />
+  );
 
   const renderSuppliersTab = () => (
     <div className="space-y-6">
@@ -511,6 +556,9 @@ const Management = () => {
       {/* Add New Category Section */}
       <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
         <h3 className="text-lg font-semibold text-secondary-blue mb-4">Add New Category</h3>
+        {isLoadingCategories && categories.length === 0 && (
+          <div className="mb-2 text-xs text-body flex items-center gap-2"><Spinner /> <span>Loading categories…</span></div>
+        )}
         <div className="flex gap-4 items-end">
           <div className="flex-1">
             <label className="block text-sm font-medium text-secondary-blue mb-2">
@@ -542,19 +590,32 @@ const Management = () => {
       <div className="bg-white-bg rounded-lg shadow-md border border-light-gray-border">
         <div className="p-6 border-b border-light-gray-border flex items-center justify-between">
           <h3 className="text-lg font-semibold text-secondary-blue">Existing Product Categories</h3>
-          <button
-            onClick={async () => {
-              const fresh = await dataService.refresh('categories');
-              setCategories(Array.isArray(fresh) ? fresh : []);
-            }}
-            className="btn-secondary-mica flex items-center gap-2"
-            title="Refresh categories from server"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {isLoadingCategories && <Spinner />}
+            <button
+              onClick={async () => {
+                if (isLoadingCategories) return;
+                setIsLoadingCategories(true);
+                try {
+                  const fresh = await dataService.refresh('categories');
+                  setCategories(Array.isArray(fresh) ? fresh : []);
+                } finally { setIsLoadingCategories(false); }
+              }}
+              className="btn-secondary-mica flex items-center gap-2 disabled:opacity-50"
+              title="Refresh categories from server"
+              disabled={isLoadingCategories}
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoadingCategories ? 'animate-spin' : ''}`} />
+              {isLoadingCategories ? 'Refreshing' : 'Refresh'}
+            </button>
+          </div>
         </div>
         <div className="divide-y divide-light-gray-border">
+          {categories.length === 0 && (
+            <div className="p-6 text-sm text-body italic">
+              No categories found. Add one above, or click Refresh if you expect existing data.
+            </div>
+          )}
           {categories.map(category => (
             <div key={category.id} className="p-6">
               <div className="flex justify-between items-center">
@@ -577,23 +638,27 @@ const Management = () => {
                   <button 
                     onClick={() => openCategoryEdit(category)}
                     className="p-2 text-secondary-blue hover:text-primary-orange rounded-lg border border-light-gray-border"
+                    title="Rename Category"
                   >
                     <Edit className="w-4 h-4" />
                   </button>
                   <button 
                     onClick={() => handleDeleteCategory(category.id)}
                     className="p-2 text-red-600 hover:text-red-900 rounded-lg border border-light-gray-border"
+                    title="Delete Category"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => {
-                      setSubProductForm({ ...subProductForm, categoryId: category.id });
+                      setSubProductForm({ categoryId: category.id, name: '', defaultBagWeight: '', defaultUnit: 'kg' });
                       setShowSubProductForm(true);
                     }}
-                    className="btn-secondary-mica text-sm"
+                    className="p-2 text-secondary-blue hover:text-primary-orange rounded-lg border border-light-gray-border"
+                    title="Add Sub-Product"
+                    aria-label={`Add sub-product to ${category.name}`}
                   >
-                    Manage Sub-Products
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
               </div>

@@ -8,7 +8,12 @@ import {
   query, 
   where, 
   orderBy, 
-  onSnapshot 
+  onSnapshot, 
+  getDoc, 
+  setDoc,
+  runTransaction,
+  increment,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
@@ -192,6 +197,48 @@ export const inventoryService = {
       console.error('Error deleting inventory item: ', error);
       throw error;
     }
+  },
+
+  async upsertDelta(id, delta) {
+    const ref = doc(db, 'inventory', id);
+    await setDoc(ref, { id, stockKg: increment(delta), updatedAt: serverTimestamp() }, { merge: true });
+  },
+  async applyProduction(production) {
+    // Non-transactional fallback (kept for compatibility)
+    try {
+      if (production.rawMaterialUsedKg) {
+        const rawId = production.supplierOfRawMaterial ? `raw_${production.supplierOfRawMaterial}` : 'raw_unknown';
+        await this.upsertDelta(rawId, -Math.abs(production.rawMaterialUsedKg));
+      }
+      await Promise.all((production.producedProducts || []).map(async p => {
+        const spKey = p.subProductId || p.id || p.subProduct; if (!spKey) return;
+        const finishedId = `finished_${spKey}`;
+        if (p.quantityKg) await this.upsertDelta(finishedId, Math.abs(p.quantityKg));
+      }));
+    } catch (e) { console.warn('applyProduction inventory error', e); }
+  },
+  async applyProductionTransaction(production) {
+    // Transactional version to reduce race conditions
+    const updates = [];
+    if (production.rawMaterialUsedKg) {
+      const rawId = production.supplierOfRawMaterial ? `raw_${production.supplierOfRawMaterial}` : 'raw_unknown';
+      updates.push({ id: rawId, delta: -Math.abs(production.rawMaterialUsedKg) });
+    }
+    (production.producedProducts || []).forEach(p => {
+      const spKey = p.subProductId || p.id || p.subProduct; if (!spKey) return;
+      const finishedId = `finished_${spKey}`;
+      if (p.quantityKg) updates.push({ id: finishedId, delta: Math.abs(p.quantityKg) });
+    });
+    if (updates.length === 0) return;
+    await runTransaction(db, async (tx) => {
+      for (const u of updates) {
+        const ref = doc(db, 'inventory', u.id);
+        const snap = await tx.get(ref);
+        const current = snap.exists() ? (snap.data().stockKg || 0) : 0;
+        const next = current + u.delta;
+        tx.set(ref, { id: u.id, stockKg: next, updatedAt: serverTimestamp() }, { merge: true });
+      }
+    });
   }
 };
 
@@ -348,5 +395,42 @@ export const purchasesService = {
   async deletePurchase(id) {
     await deleteDoc(doc(db, 'purchases', id));
     return id;
+  }
+};
+
+// New: daily stats service for per-day aggregation
+export const dailyStatsService = {
+  async accumulate(production) {
+    const date = production.processingDate || production.date || new Date().toISOString().substring(0,10);
+    const id = date;
+    const ref = doc(db, 'daily_stats', id);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const base = snap.exists() ? snap.data() : { id, date, totalRawUsedKg: 0, totalProducedKg: 0, totalLossKg: 0, batches: 0, hammerChanges: 0, knifeChanges: 0, dieselUsedLiters: 0, workers: 0 };
+      const incrementRaw = production.rawMaterialUsedKg || production.rawUsedKg || 0;
+      const incrementProduced = production.totalProducedKg || 0;
+      const incrementLoss = production.lossKg != null ? production.lossKg : Math.max(0, incrementRaw - incrementProduced);
+      const incrementHammer = production.hammerChanges || 0;
+      const incrementKnife = production.knifeChanges || 0;
+      const incrementDiesel = production.dieselUsedLiters || 0;
+      const incrementWorkers = (parseFloat(production.numMaleWorkers)||0) + (parseFloat(production.numFemaleWorkers)||0);
+      const updated = {
+        ...base,
+        totalRawUsedKg: (base.totalRawUsedKg || 0) + incrementRaw,
+        totalProducedKg: (base.totalProducedKg || 0) + incrementProduced,
+        totalLossKg: (base.totalLossKg || 0) + incrementLoss,
+        batches: (base.batches || 0) + 1,
+        hammerChanges: (base.hammerChanges || 0) + incrementHammer,
+        knifeChanges: (base.knifeChanges || 0) + incrementKnife,
+        dieselUsedLiters: (base.dieselUsedLiters || 0) + incrementDiesel,
+        workers: (base.workers || 0) + incrementWorkers,
+      };
+      updated.yieldPercent = updated.totalRawUsedKg > 0 ? (updated.totalProducedKg / updated.totalRawUsedKg) * 100 : 0;
+      tx.set(ref, { ...updated, updatedAt: serverTimestamp() }, { merge: true });
+    });
+  },
+  async getDailyStats() {
+    const qs = await getDocs(collection(db, 'daily_stats'));
+    return qs.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 };

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Calendar } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import InlineSpinner from '../components/InlineSpinner';
 
 const unitToKg = (qty, unit) => {
   const u = (unit || '').toLowerCase();
@@ -52,6 +53,8 @@ const DailyProcessing = () => {
 
   const [suppliers, setSuppliers] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
 
   const getSupplierUnitOptions = () => {
     const opts = new Set(['kg', 'tonne']);
@@ -78,9 +81,10 @@ const DailyProcessing = () => {
         if (mounted) setSuppliers(Array.isArray(s) ? s : []);
       } catch { if (mounted) setSuppliers([]); }
       try {
-        const c = await dataService.getCategories();
+        const c = await dataService.getCategories({ forceRefresh: true });
         if (mounted) setCategories(Array.isArray(c) ? c : []);
       } catch { if (mounted) setCategories([]); }
+      finally { if (mounted) setIsLoadingCategories(false); }
     })();
     return () => { mounted = false; };
   }, []);
@@ -141,6 +145,8 @@ const DailyProcessing = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const enrichedProducts = producedProducts.map(p => {
       let quantityKg = 0;
       if (p.mode === 'bags') {
@@ -153,19 +159,47 @@ const DailyProcessing = () => {
       }
       return { ...p, quantityKg };
     });
+    const rawUsedKg = unitToKg(formData.rawMaterialUsed, formData.rawMaterialUnit);
+    const totalProducedKg = enrichedProducts.reduce((s,p)=> s + (p.quantityKg||0), 0);
+    const lossKg = Math.max(0, rawUsedKg - totalProducedKg);
+    const yieldPercent = rawUsedKg > 0 ? (totalProducedKg / rawUsedKg) * 100 : 0;
 
     const submissionData = {
       ...formData,
-      // Normalize raw material used to kg as well
-      rawMaterialUsedKg: unitToKg(formData.rawMaterialUsed, formData.rawMaterialUnit),
-      producedProducts: enrichedProducts
+      rawMaterialUsedKg: rawUsedKg, // legacy/backward
+      rawUsedKg, // canonical
+      workers: (parseFloat(formData.numMaleWorkers)||0) + (parseFloat(formData.numFemaleWorkers)||0),
+      producedProducts: enrichedProducts,
+      totalProducedKg,
+      lossKg,
+      yieldPercent,
+      hammerChanges: parseFloat(formData.hammerChanges)||0,
+      knifeChanges: parseFloat(formData.knifeChanges)||0,
+      dieselUsedLiters: parseFloat(formData.dieselUsedLiters)||0,
     };
 
     try {
       await dataService.addProduction(submissionData);
-      console.log('Daily processing saved');
+      // Clear form after success
+      setFormData({
+        processingDate: formData.processingDate, // keep date
+        rawMaterialUsed: '',
+        rawMaterialUnit: 'kg',
+        supplierOfRawMaterial: '',
+        productCategory: '',
+        numMaleWorkers: 0,
+        numFemaleWorkers: 0,
+        dieselGeneratorHours: 0,
+        dieselUsedLiters: 0,
+        hammerChanges: 0,
+        knifeChanges: 0,
+        notes: ''
+      });
+      setProducedProducts([]);
     } catch (e) {
       console.error('Failed to save daily processing', e);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -261,6 +295,11 @@ const DailyProcessing = () => {
             <label htmlFor="productCategory" className="block text-sm font-medium text-secondary-blue mb-2">
               Product Category Being Made
             </label>
+            {isLoadingCategories ? (
+                <select id="productCategory" className="form-select-mica" disabled>
+                  <option>Loading...</option>
+                </select>
+              ) : (
             <select
               id="productCategory"
               className="form-select-mica"
@@ -274,7 +313,7 @@ const DailyProcessing = () => {
                   {category.name}
                 </option>
               ))}
-            </select>
+            </select>)}
           </div>
 
           {/* Produced Products Section - Dynamic based on selected category */}
@@ -489,7 +528,7 @@ const DailyProcessing = () => {
           </div>
 
           {/* Submit Buttons */}
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 pt-2 border-t border-light-gray-border mt-4">
             <button
               type="button"
               className="btn-secondary-mica"
@@ -513,8 +552,9 @@ const DailyProcessing = () => {
             >
               Clear Form
             </button>
-            <button type="submit" className="btn-primary-mica">
-              Submit Processing Update
+            <button type="submit" disabled={isSubmitting} className={`btn-primary-mica flex items-center gap-2 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}>
+              {isSubmitting && <InlineSpinner size={16} />}
+              {isSubmitting ? 'Saving...' : 'Submit Daily Log'}
             </button>
           </div>
         </form>

@@ -11,6 +11,7 @@ import InventoryAnalytics from './pages/InventoryAnalytics';
 import LogsAdjustments from './pages/LogsAdjustments';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
+import DailyAnalytics from './pages/DailyAnalytics';
 import './App.css';
 
 function App() {
@@ -32,6 +33,7 @@ function App() {
             <Route path="/logs-adjustments" element={<LogsAdjustments />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/daily-analytics" element={<DailyAnalytics />} />
           </Routes>
         </main>
       </div>

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, Plus } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import InlineSpinner from '../components/InlineSpinner';
 
 const unitToKg = (qty, unit) => {
   const u = String(unit || '').toLowerCase();
@@ -25,6 +26,8 @@ const RawMaterialPurchase = () => {
   });
 
   const [suppliers, setSuppliers] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -88,14 +91,27 @@ const RawMaterialPurchase = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const qtyKg = unitToKg(formData.quantity, formData.unit);
-    const payload = { ...formData, quantityKg: qtyKg };
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    const quantityKg = unitToKg(formData.quantity, formData.unit);
     try {
-      await dataService.addPurchase(payload);
-      alert('Raw material purchase entry submitted successfully!');
+      await dataService.addPurchase({
+        ...formData,
+        quantityKg
+      });
+      setFormData({
+        purchaseDate: formData.purchaseDate, // keep date
+        supplier: '',
+        material: '',
+        quantity: '',
+        unit: 'kg',
+        price: '',
+        notes: ''
+      });
     } catch (err) {
       console.error('Failed to save purchase', err);
-      alert('Failed to save purchase');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -276,8 +292,9 @@ const RawMaterialPurchase = () => {
                 >
                   Clear Form
                 </button>
-                <button type="submit" className="btn-primary-mica">
-                  Record Purchase
+                <button type="submit" disabled={isSubmitting} className={`btn-primary-mica flex items-center gap-2 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                  {isSubmitting && <InlineSpinner size={16} />}
+                  {isSubmitting ? 'Saving...' : 'Add Purchase'}
                 </button>
               </div>
             </form>
