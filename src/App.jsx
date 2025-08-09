@@ -5,10 +5,7 @@ import Dashboard from './pages/Dashboard';
 import RawMaterialPurchase from './pages/RawMaterialPurchase';
 import DailyProcessing from './pages/DailyProcessing';
 import Management from './pages/Management';
-import MaterialDeduction from './pages/MaterialDeduction';
 import OrderSheet from './pages/OrderSheet';
-import InventoryAnalytics from './pages/InventoryAnalytics';
-import LogsAdjustments from './pages/LogsAdjustments';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
 import DailyAnalytics from './pages/DailyAnalytics';
@@ -27,13 +24,14 @@ function App() {
             <Route path="/raw-material-purchase" element={<RawMaterialPurchase />} />
             <Route path="/daily-processing" element={<DailyProcessing />} />
             <Route path="/management" element={<Management />} />
-            <Route path="/material-deduction" element={<MaterialDeduction />} />
             <Route path="/order-sheet" element={<OrderSheet />} />
-            <Route path="/inventory-analytics" element={<InventoryAnalytics />} />
-            <Route path="/logs-adjustments" element={<LogsAdjustments />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/daily-analytics" element={<DailyAnalytics />} />
+            {/* Legacy redirects */}
+            <Route path="/inventory-analytics" element={<Navigate to="/inventory" replace />} />
+            <Route path="/logs-adjustments" element={<Navigate to="/management" replace />} />
+            <Route path="/material-deduction" element={<Navigate to="/management" replace />} />
           </Routes>
         </main>
       </div>
