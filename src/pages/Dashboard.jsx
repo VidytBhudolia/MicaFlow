@@ -94,10 +94,13 @@ const Dashboard = () => {
   ];
 
   const quickActions = [
-    { title: 'Raw Material Purchase', icon: ShoppingCart, path: '/raw-material-purchase', color: 'bg-secondary-blue' },
+    { title: 'Raw Purchase', icon: ShoppingCart, path: '/raw-material-purchase', color: 'bg-secondary-blue' },
     { title: 'Daily Processing', icon: Package, path: '/daily-processing', color: 'bg-green-500' },
     { title: 'Daily Analytics', icon: FileText, path: '/daily-analytics', color: 'bg-tertiary-gold' },
-    { title: 'Management', icon: Settings, path: '/management', color: 'bg-secondary-blue' },
+    { title: 'Inventory', icon: BarChart3, path: '/inventory', color: 'bg-secondary-blue' },
+    { title: 'Order Sheet', icon: Truck, path: '/order-sheet', color: 'bg-primary-orange', desktopOnly: true },
+    { title: 'Management', icon: Settings, path: '/management', color: 'bg-secondary-blue', desktopOnly: true },
+    { title: 'Reports', icon: FileText, path: '/reports', color: 'bg-tertiary-gold', desktopOnly: true },
   ];
 
   return (
@@ -129,19 +132,19 @@ const Dashboard = () => {
       {/* Quick Actions */}
       <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
         <h2 className="text-xl font-semibold text-secondary-blue mb-6">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {quickActions.map((action) => (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+          {quickActions.filter((a, idx) => window.innerWidth < 640 ? idx < 4 : true).map((action) => (
             <Link
               key={action.title}
               to={action.path}
-              className="flex items-center p-4 rounded-lg border border-light-gray-border hover:border-primary-orange hover:shadow-md transition-all duration-200 bg-white-bg"
+              className={`flex items-center p-4 rounded-lg border border-light-gray-border hover:border-primary-orange hover:shadow-md transition-all duration-200 bg-white-bg ${action.desktopOnly ? 'hidden sm:flex' : ''}`}
             >
               <div className={`${action.color} p-3 rounded-lg mr-4`}>
                 <action.icon className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h3 className="font-medium text-secondary-blue">{action.title}</h3>
-                <p className="text-sm text-body">Go to {action.title.toLowerCase()}</p>
+                <h3 className="font-medium text-secondary-blue text-sm sm:text-base">{action.title}</h3>
+                <p className="text-xs text-body hidden md:block">Go to {action.title}</p>
               </div>
             </Link>
           ))}

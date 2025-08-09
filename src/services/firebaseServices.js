@@ -141,6 +141,33 @@ export const suppliersService = {
   }
 };
 
+// Buyers Service
+export const buyersService = {
+  async addBuyer(buyerData) {
+    const docRef = await addDoc(collection(db, 'buyers'), {
+      ...buyerData,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    return { id: docRef.id, ...buyerData };
+  },
+  async getBuyers() {
+    const snap = await getDocs(collection(db, 'buyers'));
+    const buyers = [];
+    snap.forEach(d => buyers.push({ id: d.id, ...d.data() }));
+    return buyers;
+  },
+  async updateBuyer(buyerId, buyerData) {
+    const ref = doc(db, 'buyers', buyerId);
+    await updateDoc(ref, { ...buyerData, updatedAt: new Date().toISOString() });
+    return { id: buyerId, ...buyerData };
+  },
+  async deleteBuyer(buyerId) {
+    await deleteDoc(doc(db, 'buyers', buyerId));
+    return buyerId;
+  }
+};
+
 // Inventory Service
 export const inventoryService = {
   // Add inventory item

@@ -1,5 +1,5 @@
 // Lightweight data service abstraction with pluggable backend (localStorage by default)
-import { suppliersService, categoriesService, productionService, purchasesService, inventoryService, dailyStatsService } from './firebaseServices';
+import { suppliersService, categoriesService, productionService, purchasesService, inventoryService, dailyStatsService, buyersService } from './firebaseServices';
 
 const USE_FIREBASE = true; // enabled Firestore
 
@@ -8,6 +8,7 @@ const CATEGORIES_KEY = 'micaflow-categories';
 const CACHE_META_KEY = 'micaflow-cache-meta';
 const PURCHASES_KEY = 'micaflow-purchases';
 const PRODUCTION_KEY = 'micaflow-production';
+const BUYERS_KEY = 'micaflow-buyers';
 
 const safeParse = (str, fallback) => {
   try {
@@ -188,6 +189,34 @@ const remote = {
     return res;
   },
 
+  // Buyers
+  async getBuyers(options = {}) {
+    const { force = false, forceRefresh = false } = options;
+    const effectiveForce = force || forceRefresh;
+    const cached = readCached(BUYERS_KEY, v => v);
+    if (cached && !effectiveForce && Array.isArray(cached) && cached.length > 0) return cached;
+    const remoteList = await buyersService.getBuyers();
+    return writeCached(BUYERS_KEY, remoteList, v => v);
+  },
+  async addBuyer(b) {
+    const created = await buyersService.addBuyer(b);
+    const current = readCached(BUYERS_KEY, v => v) || [];
+    writeCached(BUYERS_KEY, [...current, created], v => v);
+    return created;
+  },
+  async updateBuyer(id, patch) {
+    const updated = await buyersService.updateBuyer(id, patch);
+    const current = readCached(BUYERS_KEY, v => v) || [];
+    writeCached(BUYERS_KEY, current.map(x => x.id === id ? { ...x, ...patch } : x), v => v);
+    return updated;
+  },
+  async deleteBuyer(id) {
+    const res = await buyersService.deleteBuyer(id);
+    const current = readCached(BUYERS_KEY, v => v) || [];
+    writeCached(BUYERS_KEY, current.filter(x => x.id !== id), v => v);
+    return res;
+  },
+
   // Production & Purchases
   async addProduction(production) {
     // production expected to already have: rawMaterialUsedKg, producedProducts[{quantityKg}], totalProducedKg, lossKg, yieldPercent
@@ -262,6 +291,7 @@ const remote = {
     if (key === 'production') return this.getProductionBatches({ force: true });
     if (key === 'inventory') return this.getInventory({ force: true });
     if (key === 'daily_stats') return this.getDailyStats({ force: true });
+    if (key === 'buyers') return this.getBuyers({ force: true });
     return null;
   },
 };

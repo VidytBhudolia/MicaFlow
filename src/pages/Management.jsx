@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react';
+import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown, RefreshCw, List, Wrench } from 'lucide-react';
 import { dataService } from '../services/dataService';
 
 // Helper to generate unique IDs reliably
@@ -9,7 +9,19 @@ const slugify = (str = '') => str.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-'
 
 const Management = () => {
   const [activeTab, setActiveTab] = useState('suppliers');
-  
+  // Buyers Management State
+  const [buyers, setBuyers] = useState([]);
+  const [isBuyerFormOpen, setIsBuyerFormOpen] = useState(false);
+  const [editingBuyer, setEditingBuyer] = useState(null);
+  const [buyerSearchTerm, setBuyerSearchTerm] = useState('');
+  const [buyerFormData, setBuyerFormData] = useState({
+    name: '',
+    contactPerson: '',
+    phoneNumber: '',
+    email: '',
+    address: ''
+  });
+
   // Supplier Management State
   const [suppliers, setSuppliers] = useState([]);
   const [isSupplierFormOpen, setIsSupplierFormOpen] = useState(false);
@@ -90,9 +102,13 @@ const Management = () => {
       }
     };
 
+    const loadBuyers = async () => {
+      try { const b = await dataService.getBuyers?.(); if (mounted) setBuyers(Array.isArray(b)?b:[]); } catch { if (mounted) setBuyers([]); }
+    };
+
     loadSuppliers();
     loadCategories(false);
-
+    loadBuyers();
     return () => { mounted = false; };
   }, []);
 
@@ -110,6 +126,32 @@ const Management = () => {
   useEffect(() => {
     try { dataService.setCategories(categories); } catch {}
   }, [categories]);
+
+  // Buyer Management Functions
+  const resetBuyerForm = () => {
+    setBuyerFormData({ name:'', contactPerson:'', phoneNumber:'', email:'', address:'' });
+    setEditingBuyer(null); setIsBuyerFormOpen(false);
+  };
+  const handleBuyerInputChange = (field, value) => setBuyerFormData(prev=>({...prev,[field]:value}));
+  const handleBuyerSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { ...buyerFormData };
+      if (editingBuyer) {
+        await dataService.updateBuyer(editingBuyer.id, payload);
+        setBuyers(prev => prev.map(b => b.id === editingBuyer.id ? { ...b, ...payload } : b));
+      } else {
+        const created = await dataService.addBuyer(payload);
+        setBuyers(prev => [...prev, created]);
+      }
+      resetBuyerForm();
+    } catch (err) { console.error('Save buyer failed', err); try { alert('Failed to save buyer'); } catch {} }
+  };
+  const handleBuyerEdit = (buyer) => { setEditingBuyer(buyer); setBuyerFormData({ name:buyer.name||'', contactPerson:buyer.contactPerson||'', phoneNumber:buyer.phoneNumber||'', email:buyer.email||'', address:buyer.address||'' }); setIsBuyerFormOpen(true); };
+  const handleBuyerDelete = (buyerId) => {
+    openConfirm('Delete Buyer','Are you sure you want to delete this buyer?', async () => { try { await dataService.deleteBuyer(buyerId); setBuyers(prev=>prev.filter(b=>b.id!==buyerId)); } finally { closeConfirm(); } });
+  };
+  const filteredBuyers = buyers.filter(b => (b.name||'').toLowerCase().includes(buyerSearchTerm.toLowerCase()) || (b.contactPerson||'').toLowerCase().includes(buyerSearchTerm.toLowerCase()));
 
   // Supplier Management Functions
   const handleSupplierSubmit = async (e) => {
@@ -551,6 +593,104 @@ const Management = () => {
     </div>
   );
 
+  const renderBuyersTab = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-lg font-semibold text-secondary-blue">Buyer Management</h3>
+          <p className="text-body">Manage customers / buyers for orders</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async ()=>{ const fresh = await dataService.getBuyers?.({ force:true }); setBuyers(Array.isArray(fresh)?fresh:[]); }}
+            className="btn-secondary-mica flex items-center gap-2"
+            title="Refresh buyers from server"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+          <button onClick={()=>setIsBuyerFormOpen(true)} className="btn-primary-mica flex items-center gap-2"><Plus className="w-4 h-4"/>Add Buyer</button>
+        </div>
+      </div>
+      <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-body w-4 h-4" />
+            <input value={buyerSearchTerm} onChange={e=>setBuyerSearchTerm(e.target.value)} placeholder="Search buyers..." className="w-full pl-10 pr-4 py-2 border border-light-gray-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-orange bg-white-bg text-secondary-blue" />
+        </div>
+      </div>
+      <div className="bg-white-bg rounded-lg shadow-md overflow-hidden border border-light-gray-border">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-light-gray-bg">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Contact Person</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Phone</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-body uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white-bg divide-y divide-light-gray-border">
+              {filteredBuyers.map(buyer => (
+                <tr key={buyer.id || Math.random()}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-secondary-blue">{buyer.name}</div>
+                      <div className="text-sm text-body">{buyer.address}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{buyer.contactPerson}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{buyer.phoneNumber}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-blue">{buyer.email}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button onClick={()=>handleBuyerEdit(buyer)} className="text-secondary-blue hover:text-primary-orange mr-4"><Edit className="w-4 h-4"/></button>
+                    <button onClick={()=>handleBuyerDelete(buyer.id)} className="text-red-600 hover:text-red-900"><Trash2 className="w-4 h-4"/></button>
+                  </td>
+                </tr>
+              ))}
+              {filteredBuyers.length === 0 && (
+                <tr><td colSpan={5} className="px-6 py-6 text-sm text-body italic">No buyers found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {isBuyerFormOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white-bg rounded-lg p-6 w-full max-w-md border border-light-gray-border">
+            <h2 className="text-xl font-semibold text-secondary-blue mb-4">{editingBuyer ? 'Edit Buyer' : 'Add Buyer'}</h2>
+            <form onSubmit={handleBuyerSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Buyer Name</label>
+                <input className="form-input-mica" value={buyerFormData.name} onChange={e=>handleBuyerInputChange('name', e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Contact Person</label>
+                <input className="form-input-mica" value={buyerFormData.contactPerson} onChange={e=>handleBuyerInputChange('contactPerson', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Phone Number</label>
+                <input className="form-input-mica" value={buyerFormData.phoneNumber} onChange={e=>handleBuyerInputChange('phoneNumber', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Email</label>
+                <input type="email" className="form-input-mica" value={buyerFormData.email} onChange={e=>handleBuyerInputChange('email', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Address</label>
+                <textarea className="form-textarea-mica" rows={3} value={buyerFormData.address} onChange={e=>handleBuyerInputChange('address', e.target.value)} />
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button type="submit" className="btn-primary-mica flex-1">{editingBuyer ? 'Update' : 'Add'} Buyer</button>
+                <button type="button" className="btn-secondary-mica flex-1" onClick={resetBuyerForm}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const renderCategoriesTab = () => (
     <div className="space-y-6">
       {/* Add New Category Section */}
@@ -766,6 +906,45 @@ const Management = () => {
     </div>
   );
 
+  const renderLogsTab = () => (
+    <div className="space-y-6">
+      <h3 className="text-lg font-semibold text-secondary-blue flex items-center gap-2"><List className="w-5 h-5"/>Activity Logs</h3>
+      <p className="text-sm text-body">(Placeholder) Future: show real-time activity logs (purchases, production, adjustments, orders).</p>
+    </div>
+  );
+  const renderAdjustmentsTab = () => (
+    <div className="space-y-6">
+      <h3 className="text-lg font-semibold text-secondary-blue flex items-center gap-2"><Wrench className="w-5 h-5"/>Inventory Adjustments</h3>
+      <p className="text-sm text-body mb-4">Record manual increases/decreases to inventory. (Placeholder form for now)</p>
+      <form className="space-y-4 max-w-lg">
+        <div>
+          <label className="block text-sm font-medium text-secondary-blue mb-2">Item Key / ID</label>
+          <input className="form-input-mica" placeholder="e.g., raw_supplier123 or finished_subProd456" />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-secondary-blue mb-2">Delta (kg)</label>
+            <input type="number" className="form-input-mica" placeholder="e.g., -25" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-secondary-blue mb-2">Reason</label>
+            <select className="form-select-mica">
+              <option value="correction">Correction</option>
+              <option value="damage">Damage</option>
+              <option value="loss">Loss</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-secondary-blue mb-2">Notes</label>
+          <textarea className="form-textarea-mica" rows={3} placeholder="Optional notes" />
+        </div>
+        <button type="button" className="btn-primary-mica">Submit Adjustment</button>
+      </form>
+    </div>
+  );
+
   return (
     <div id="management" className="bg-light-gray-bg min-h-screen">
       <div className="flex items-center gap-3 mb-6">
@@ -779,33 +958,20 @@ const Management = () => {
       {/* Tabs */}
       <div className="bg-white-bg rounded-2xl shadow-md border border-light-gray-border">
         <div className="border-b border-light-gray-border">
-          <nav className="flex">
-            <button
-              onClick={() => setActiveTab('suppliers')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 ${
-                activeTab === 'suppliers'
-                  ? 'border-primary-orange text-primary-orange'
-                  : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'
-              }`}
-            >
-              Suppliers
-            </button>
-            <button
-              onClick={() => setActiveTab('categories')}
-              className={`px-6 py-4 text-sm font-medium border-b-2 ${
-                activeTab === 'categories'
-                  ? 'border-primary-orange text-primary-orange'
-                  : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'
-              }`}
-            >
-              Categories
-            </button>
+          <nav className="flex flex-wrap">
+            <button onClick={() => setActiveTab('suppliers')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'suppliers' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Suppliers</button>
+            <button onClick={() => setActiveTab('buyers')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'buyers' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Buyers</button>
+            <button onClick={() => setActiveTab('categories')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'categories' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Categories</button>
+            <button onClick={() => setActiveTab('logs')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'logs' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Logs</button>
+            <button onClick={() => setActiveTab('adjustments')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'adjustments' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Adjustments</button>
           </nav>
         </div>
-
         <div className="p-6">
           {activeTab === 'suppliers' && renderSuppliersTab()}
+          {activeTab === 'buyers' && renderBuyersTab()}
           {activeTab === 'categories' && renderCategoriesTab()}
+          {activeTab === 'logs' && renderLogsTab()}
+          {activeTab === 'adjustments' && renderAdjustmentsTab()}
         </div>
       </div>
 
