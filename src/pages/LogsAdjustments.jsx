@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { FileText, Plus, Filter, Search, Calendar, Edit, Trash2 } from 'lucide-react';
+import InlineSpinner from '../components/InlineSpinner';
 
 const LogsAdjustments = () => {
   const [activeTab, setActiveTab] = useState('logs');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [adjustmentForm, setAdjustmentForm] = useState({
     materialType: '',
@@ -84,20 +86,26 @@ const LogsAdjustments = () => {
     return matchesStatus && matchesSearch;
   });
 
-  const handleAdjustmentSubmit = (e) => {
+  const handleAdjustmentSubmit = async (e) => {
     e.preventDefault();
-    console.log('Stock Adjustment:', adjustmentForm);
-    // TODO: Integrate with Firebase
-    alert('Stock adjustment recorded successfully!');
-    setAdjustmentForm({
-      materialType: '',
-      adjustmentType: 'increase',
-      quantity: '',
-      unit: 'kg',
-      reason: '',
-      notes: ''
-    });
-    setShowAdjustmentForm(false);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      console.log('Stock Adjustment:', adjustmentForm);
+      // TODO: Integrate with Firebase
+      try { alert('Stock adjustment recorded successfully!'); } catch {}
+      setAdjustmentForm({
+        materialType: '',
+        adjustmentType: 'increase',
+        quantity: '',
+        unit: 'kg',
+        reason: '',
+        notes: ''
+      });
+      setShowAdjustmentForm(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -327,12 +335,13 @@ const LogsAdjustments = () => {
                         </div>
 
                         <div className="flex gap-3">
-                          <button type="submit" className="btn-primary">
-                            Submit Adjustment
+                          <button type="submit" disabled={isSubmitting} className={`btn-primary flex items-center gap-2 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                            {isSubmitting && <InlineSpinner size={16} />}
+                            {isSubmitting ? 'Saving...' : 'Submit Adjustment'}
                           </button>
                           <button 
                             type="button" 
-                            onClick={() => setShowAdjustmentForm(false)}
+                            onClick={() => { if (!isSubmitting) setShowAdjustmentForm(false); }}
                             className="btn-secondary"
                           >
                             Cancel

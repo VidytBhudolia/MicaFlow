@@ -16,6 +16,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import { validatePurchase, validateProduction, checkSupplierDeletable, ensureExists } from './refIntegrity';
 
 // Generic CRUD functions
 export const addDocument = async (collectionName, data) => {
@@ -120,6 +121,11 @@ export const suppliersService = {
   // Delete supplier
   async deleteSupplier(supplierId) {
     try {
+      // Guard: ensure no dependent records before deletion
+      const check = await checkSupplierDeletable(supplierId);
+      if (!check.ok) {
+        throw new Error(check.reason || 'Supplier is referenced by other records');
+      }
       await deleteDoc(doc(db, 'suppliers', supplierId));
       return supplierId;
     } catch (error) {
@@ -274,6 +280,8 @@ export const ordersService = {
   // Add new order
   async addOrder(orderData) {
     try {
+  // If buyerId exists, ensure buyer exists (soft FK)
+  if (orderData?.buyerId) await ensureExists('buyers', orderData.buyerId, { fieldLabel: 'buyerId' });
       const docRef = await addDoc(collection(db, 'orders'), {
         ...orderData,
         status: 'pending',
@@ -325,6 +333,7 @@ export const productionService = {
   // Add production batch
   async addProductionBatch(batchData) {
     try {
+  await validateProduction(batchData);
       const docRef = await addDoc(collection(db, 'production'), {
         ...batchData,
         status: 'in-progress',
@@ -408,6 +417,7 @@ export const categoriesService = {
 export const purchasesService = {
   async addPurchase(data) {
     const now = new Date().toISOString();
+    await validatePurchase(data);
     const ref = await addDoc(collection(db, 'purchases'), { ...data, createdAt: now, updatedAt: now });
     return { id: ref.id, ...data };
   },
@@ -416,6 +426,9 @@ export const purchasesService = {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
   async updatePurchase(id, patch) {
+    if (patch?.supplierId) {
+      await ensureExists('suppliers', patch.supplierId, { fieldLabel: 'supplierId' });
+    }
     await updateDoc(doc(db, 'purchases', id), { ...patch, updatedAt: new Date().toISOString() });
     return { id, ...patch };
   },
@@ -459,5 +472,97 @@ export const dailyStatsService = {
   async getDailyStats() {
     const qs = await getDocs(collection(db, 'daily_stats'));
     return qs.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+};
+
+// Daily Category Stats (per-category aggregates for 100% stacked chart)
+export const dailyCategoryStatsService = {
+  // Accumulate a production batch into the per-category daily doc
+  async accumulate(production) {
+    try {
+      const categoryId = production.productCategory;
+      if (!categoryId) return;
+      const date = production.processingDate || production.date || new Date().toISOString().substring(0,10);
+      const id = `${categoryId}_${date}`;
+      const ref = doc(db, 'daily_category_stats', id);
+
+      // Compute increments
+      const producedBySub = {};
+      let producedSum = 0;
+      (production.producedProducts || []).forEach(p => {
+        const spId = p.subProductId || p.id || p.subProduct;
+        const qty = Number(p.quantityKg) || 0;
+        if (!spId || qty <= 0) return;
+        producedBySub[spId] = (producedBySub[spId] || 0) + qty;
+        producedSum += qty;
+      });
+      const raw = production.rawMaterialUsedKg || production.rawUsedKg || 0;
+      const loss = production.lossKg != null ? production.lossKg : Math.max(0, raw - producedSum);
+
+      // Transaction: merge sums per sub-product
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        const base = snap.exists() ? (snap.data() || {}) : { id, categoryId, date, producedKgBySub: {}, rawUsedKg: 0, lossKg: 0 };
+        const merged = { ...base };
+        merged.rawUsedKg = (base.rawUsedKg || 0) + raw;
+        merged.lossKg = (base.lossKg || 0) + loss;
+        const current = { ...(base.producedKgBySub || {}) };
+        Object.entries(producedBySub).forEach(([k, v]) => { current[k] = (current[k] || 0) + v; });
+        merged.producedKgBySub = current;
+        tx.set(ref, { ...merged, updatedAt: serverTimestamp() }, { merge: true });
+      });
+
+      // Retention: keep only latest 30 dates for this category
+      const qcat = query(collection(db, 'daily_category_stats'), where('categoryId','==', categoryId), orderBy('date','asc'));
+      const qs = await getDocs(qcat);
+      const docs = qs.docs;
+      const excess = Math.max(0, docs.length - 30);
+      if (excess > 0) {
+        for (let i = 0; i < excess; i++) {
+          try { await deleteDoc(doc(db, 'daily_category_stats', docs[i].id)); } catch {}
+        }
+      }
+    } catch (e) {
+      console.warn('dailyCategoryStats accumulate failed', e);
+    }
+  },
+};
+
+// Admin utilities
+export const adminService = {
+  // Danger: Deletes all documents from key collections
+  async deleteAllData() {
+    const collections = [
+      'inventory',
+      'production',
+      'purchases',
+      'daily_stats',
+      'orders',
+      'buyers',
+      'suppliers',
+      // categories handled separately due to subcollection
+    ];
+
+    // Helper: delete all docs in a collection
+    const deleteAllInCollection = async (name) => {
+      const snap = await getDocs(collection(db, name));
+      await Promise.all(snap.docs.map(async (d) => deleteDoc(doc(db, name, d.id))));
+    };
+
+    // 1) Delete flat collections
+    for (const name of collections) {
+      try { await deleteAllInCollection(name); } catch (e) { console.warn(`Failed deleting collection ${name}`, e); }
+    }
+
+    // 2) Delete categories and subProducts
+    try {
+      const catsSnap = await getDocs(collection(db, 'categories'));
+      for (const c of catsSnap.docs) {
+        // delete subProducts first
+        const subsSnap = await getDocs(collection(db, 'categories', c.id, 'subProducts'));
+        await Promise.all(subsSnap.docs.map(s => deleteDoc(doc(db, 'categories', c.id, 'subProducts', s.id))));
+        await deleteDoc(doc(db, 'categories', c.id));
+      }
+    } catch (e) { console.warn('Failed deleting categories', e); }
   }
 };

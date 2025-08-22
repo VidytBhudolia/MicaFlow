@@ -8,7 +8,7 @@ const isRaw = (id='') => id.startsWith('raw_');
 const isFinished = (id='') => id.startsWith('finished_');
 const extractKey = (id='') => id.split('_').slice(1).join('_');
 
-export async function getInventorySummary() {
+export async function getInventorySummary({ includeZeroCategories = false } = {}) {
   // Load inventory, categories, suppliers
   const invSnap = await getDocs(collection(db, 'inventory'));
   const inventory = invSnap.docs.map(d => ({ id: d.id, ...(d.data()||{}) }));
@@ -49,10 +49,47 @@ export async function getInventorySummary() {
     }
   });
 
-  const finishedStockPerCategory = Object.entries(finishedStockPerCategoryMap).map(([categoryId,totalKg]) => {
+  // Fallback: if no finished inventory documents exist yet, derive finished stock from production history
+  if (finishedStockPerSubProduct.length === 0) {
+    try {
+      const prodSnap = await getDocs(collection(db, 'production'));
+      const totalsBySub = {};
+      prodSnap.docs.forEach(docSnap => {
+        const data = docSnap.data() || {};
+        (data.producedProducts || []).forEach(p => {
+          const spKey = p.subProductId || p.id || p.subProduct;
+          if (!spKey) return;
+          const qty = Number(p.quantityKg) || 0;
+          if (qty <= 0) return;
+          totalsBySub[spKey] = (totalsBySub[spKey] || 0) + qty;
+        });
+      });
+      Object.entries(totalsBySub).forEach(([spId, totalKg]) => {
+        const meta = subProductMeta[spId];
+        const subName = meta?.name || spId;
+        finishedStockPerSubProduct.push({ subProductId: spId, name: subName, totalKg, categoryId: meta?.categoryId, categoryName: meta?.categoryName });
+        if (meta) {
+          finishedStockPerCategoryMap[meta.categoryId] = (finishedStockPerCategoryMap[meta.categoryId] || 0) + totalKg;
+        } else {
+          finishedStockPerCategoryMap['uncategorized'] = (finishedStockPerCategoryMap['uncategorized'] || 0) + totalKg;
+        }
+      });
+    } catch (e) {
+      // ignore fallback errors; UI can show zero
+      console.warn('Fallback finished stock from production failed', e);
+    }
+  }
+
+  let finishedStockPerCategory = Object.entries(finishedStockPerCategoryMap).map(([categoryId,totalKg]) => {
     const cat = categories.find(c => String(c.id) === String(categoryId));
     return { categoryId, name: cat?.name || (categoryId === 'uncategorized' ? 'Uncategorized' : categoryId), totalKg };
   });
+  if (includeZeroCategories) {
+    const existing = new Set(finishedStockPerCategory.map(c => String(c.categoryId)));
+    categories.forEach(cat => {
+      if (!existing.has(String(cat.id))) finishedStockPerCategory.push({ categoryId: cat.id, name: cat.name, totalKg: 0 });
+    });
+  }
 
   const rawStockPerSupplier = Object.entries(rawStockBySupplier).map(([supplierId,totalKg]) => ({ supplierId, name: supplierMap[supplierId] || supplierId, totalKg }));
 

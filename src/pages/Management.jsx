@@ -9,6 +9,8 @@ const slugify = (str = '') => str.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-'
 
 const Management = () => {
   const [activeTab, setActiveTab] = useState('suppliers');
+  const [isWiping, setIsWiping] = useState(false);
+  const [wipeMsg, setWipeMsg] = useState('');
   // Buyers Management State
   const [buyers, setBuyers] = useState([]);
   const [isBuyerFormOpen, setIsBuyerFormOpen] = useState(false);
@@ -69,6 +71,8 @@ const Management = () => {
   // New: loading states
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
+  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
+  const [isSubmittingBuyer, setIsSubmittingBuyer] = useState(false);
 
   // Load suppliers & categories from dataService (supports async/remote)
   useEffect(() => {
@@ -135,6 +139,8 @@ const Management = () => {
   const handleBuyerInputChange = (field, value) => setBuyerFormData(prev=>({...prev,[field]:value}));
   const handleBuyerSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingBuyer) return;
+    setIsSubmittingBuyer(true);
     try {
       const payload = { ...buyerFormData };
       if (editingBuyer) {
@@ -146,6 +152,7 @@ const Management = () => {
       }
       resetBuyerForm();
     } catch (err) { console.error('Save buyer failed', err); try { alert('Failed to save buyer'); } catch {} }
+    finally { setIsSubmittingBuyer(false); }
   };
   const handleBuyerEdit = (buyer) => { setEditingBuyer(buyer); setBuyerFormData({ name:buyer.name||'', contactPerson:buyer.contactPerson||'', phoneNumber:buyer.phoneNumber||'', email:buyer.email||'', address:buyer.address||'' }); setIsBuyerFormOpen(true); };
   const handleBuyerDelete = (buyerId) => {
@@ -156,6 +163,8 @@ const Management = () => {
   // Supplier Management Functions
   const handleSupplierSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingSupplier) return;
+    setIsSubmittingSupplier(true);
     try {
       const payload = { ...supplierFormData };
       // Coerce weight to number when present
@@ -174,7 +183,7 @@ const Management = () => {
     } catch (error) {
       console.error('Error saving supplier:', error);
       try { alert(`Failed to save supplier: ${error?.message || 'Unknown error'}`); } catch {}
-    }
+    } finally { setIsSubmittingSupplier(false); }
   };
 
   const handleSupplierEdit = (supplier) => {
@@ -389,6 +398,37 @@ const Management = () => {
     <span className="inline-block w-4 h-4 border-2 border-primary-orange border-t-transparent rounded-full animate-spin align-middle" aria-label="Loading" />
   );
 
+  const renderDangerTab = () => (
+    <div className="space-y-4">
+      <div className="p-4 bg-red-50 border border-red-200 rounded">
+        <h3 className="font-semibold text-red-700 mb-1">Danger Zone</h3>
+        <p className="text-sm text-red-700">This will permanently delete ALL data in Firestore for this project: suppliers, buyers, orders, purchases, production, inventory, daily stats, categories, and sub-products. This cannot be undone.</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className={`px-4 py-2 rounded bg-red-600 text-white disabled:opacity-60 disabled:cursor-not-allowed`}
+          disabled={isWiping}
+          onClick={() => {
+            if (isWiping) return;
+            const ok1 = window.confirm('Are you absolutely sure? This deletes ALL data.');
+            if (!ok1) return;
+            const ok2 = window.prompt('Type DELETE to confirm:');
+            if ((ok2 || '').toUpperCase() !== 'DELETE') return;
+            setIsWiping(true); setWipeMsg('Deleting…');
+            dataService.deleteAllData()
+              .then(() => { setWipeMsg('All data deleted.'); })
+              .catch((e) => { console.error(e); setWipeMsg(e?.message || 'Failed to delete all data'); })
+              .finally(() => { setIsWiping(false); });
+          }}
+        >
+          {isWiping ? (<span className="inline-flex items-center gap-2"><Spinner/> Deleting…</span>) : 'Delete ALL Data'}
+        </button>
+        {wipeMsg && <span className="text-sm text-body">{wipeMsg}</span>}
+      </div>
+    </div>
+  );
+
   const renderSuppliersTab = () => (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -575,12 +615,13 @@ const Management = () => {
               </div>
 
               <div className="flex space-x-3 pt-4">
-                <button type="submit" className="btn-primary-mica flex-1">
-                  {editingSupplier ? 'Update' : 'Add'} Supplier
+                <button type="submit" disabled={isSubmittingSupplier} className={`btn-primary-mica flex-1 flex items-center justify-center gap-2 ${isSubmittingSupplier ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                  {isSubmittingSupplier && <Spinner />}
+                  {editingSupplier ? (isSubmittingSupplier ? 'Updating…' : 'Update Supplier') : (isSubmittingSupplier ? 'Adding…' : 'Add Supplier')}
                 </button>
                 <button
                   type="button"
-                  onClick={resetSupplierForm}
+                  onClick={() => { if (!isSubmittingSupplier) resetSupplierForm(); }}
                   className="btn-secondary-mica flex-1"
                 >
                   Cancel
@@ -681,8 +722,11 @@ const Management = () => {
                 <textarea className="form-textarea-mica" rows={3} value={buyerFormData.address} onChange={e=>handleBuyerInputChange('address', e.target.value)} />
               </div>
               <div className="flex space-x-3 pt-4">
-                <button type="submit" className="btn-primary-mica flex-1">{editingBuyer ? 'Update' : 'Add'} Buyer</button>
-                <button type="button" className="btn-secondary-mica flex-1" onClick={resetBuyerForm}>Cancel</button>
+                <button type="submit" disabled={isSubmittingBuyer} className={`btn-primary-mica flex-1 flex items-center justify-center gap-2 ${isSubmittingBuyer ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                  {isSubmittingBuyer && <Spinner />}
+                  {editingBuyer ? (isSubmittingBuyer ? 'Updating…' : 'Update Buyer') : (isSubmittingBuyer ? 'Adding…' : 'Add Buyer')}
+                </button>
+                <button type="button" className="btn-secondary-mica flex-1" onClick={() => { if (!isSubmittingBuyer) resetBuyerForm(); }}>Cancel</button>
               </div>
             </form>
           </div>
@@ -964,6 +1008,7 @@ const Management = () => {
             <button onClick={() => setActiveTab('categories')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'categories' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Categories</button>
             <button onClick={() => setActiveTab('logs')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'logs' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Logs</button>
             <button onClick={() => setActiveTab('adjustments')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'adjustments' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Adjustments</button>
+            <button onClick={() => setActiveTab('danger')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'danger' ? 'border-red-600 text-red-600' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Danger</button>
           </nav>
         </div>
         <div className="p-6">
@@ -972,6 +1017,7 @@ const Management = () => {
           {activeTab === 'categories' && renderCategoriesTab()}
           {activeTab === 'logs' && renderLogsTab()}
           {activeTab === 'adjustments' && renderAdjustmentsTab()}
+          {activeTab === 'danger' && renderDangerTab()}
         </div>
       </div>
 

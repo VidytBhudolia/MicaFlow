@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Calendar, FileText, Minus } from 'lucide-react';
+import InlineSpinner from '../components/InlineSpinner';
 
 const MaterialDeduction = () => {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -35,6 +36,8 @@ const MaterialDeduction = () => {
     'Other'
   ];
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -47,16 +50,34 @@ const MaterialDeduction = () => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const submissionData = {
-      ...formData,
-      deductionType
-    };
-    console.log('Material Deduction Data:', submissionData);
-    // TODO: Integrate with Firebase
-    // TODO: Replace with custom modal
-    console.log('Material deduction recorded successfully!');
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const submissionData = {
+        ...formData,
+        deductionType
+      };
+      console.log('Material Deduction Data:', submissionData);
+      // TODO: Integrate with Firebase service
+      // Auto-clear on success
+      setFormData({
+        deductionDate: todayStr,
+        orderSheetRef: '',
+        materialType: '',
+        quantity: '',
+        unit: 'kg',
+        reason: '',
+        invoiceNumber: '',
+        truckNumber: '',
+        notes: ''
+      });
+      setDeductionType('order-sheet');
+      try { alert('Material deduction recorded successfully!'); } catch {}
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -329,8 +350,9 @@ const MaterialDeduction = () => {
                 >
                   Clear Form
                 </button>
-                <button type="submit" className="btn-primary-mica">
-                  Record Deduction
+                <button type="submit" disabled={isSubmitting} className={`btn-primary-mica flex items-center gap-2 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                  {isSubmitting && <InlineSpinner size={16} />}
+                  {isSubmitting ? 'Saving...' : 'Record Deduction'}
                 </button>
               </div>
             </form>

@@ -1,5 +1,5 @@
 // Lightweight data service abstraction with pluggable backend (localStorage by default)
-import { suppliersService, categoriesService, productionService, purchasesService, inventoryService, dailyStatsService, buyersService } from './firebaseServices';
+import { suppliersService, categoriesService, productionService, purchasesService, inventoryService, dailyStatsService, buyersService, adminService, dailyCategoryStatsService } from './firebaseServices';
 
 const USE_FIREBASE = true; // enabled Firestore
 
@@ -85,6 +85,21 @@ const writeCached = (key, value, normalizer) => {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
   markCache(key);
   return v;
+};
+
+// Invalidate helper for cache keys we manage via CACHE_META_KEY
+const invalidateCache = (key) => {
+  try {
+    const meta = getCacheMeta();
+    // remove timestamp to force next fetch
+    delete meta[key];
+    setCacheMeta(meta);
+    // also optionally clear the stored value for known keys
+    if (key === 'production') localStorage.removeItem(PRODUCTION_KEY);
+    if (key === 'purchases') localStorage.removeItem(PURCHASES_KEY);
+    if (key === 'categories') localStorage.removeItem(CATEGORIES_KEY);
+    if (key === 'suppliers') localStorage.removeItem(SUPPLIERS_KEY);
+  } catch {}
 };
 
 // Local backend
@@ -235,18 +250,39 @@ const remote = {
       ? await productionService.addProductionBatch(enriched)
       : await local.addProduction(enriched);
     if (USE_FIREBASE) {
-      try { await (inventoryService.applyProductionTransaction ? inventoryService.applyProductionTransaction(enriched) : inventoryService.applyProduction(enriched)); } catch (e) { console.warn('Inventory update failed', e); }
-      try { await dailyStatsService.accumulate(enriched); } catch (e) { console.warn('Daily stats update failed', e); }
+      try {
+        if (inventoryService.applyProductionTransaction) {
+          await inventoryService.applyProductionTransaction(enriched);
+        } else {
+          await inventoryService.applyProduction(enriched);
+        }
+      } catch (e) {
+        console.warn('Inventory transaction update failed; retrying non-transactional applyProduction', e);
+        try { await inventoryService.applyProduction(enriched); } catch (e2) { console.warn('Inventory fallback update failed', e2); }
+      }
+  try { await dailyStatsService.accumulate(enriched); } catch (e) { console.warn('Daily stats update failed', e); }
+  try { await dailyCategoryStatsService.accumulate(enriched); } catch (e) { console.warn('Daily category stats update failed', e); }
     }
-    invalidateCache('production');
+  invalidateCache('production');
+  invalidateCache('inventory');
+  // Also clear any dashboard-related aggregations consumers may cache
+  invalidateCache('categories');
+  invalidateCache('suppliers');
     return saved;
   },
   async addPurchase(doc) { 
+    // Enforce supplierId. If only supplierName is provided, try to map to id.
+    if (!doc.supplierId && doc.supplierName) {
+      try {
+        const suppliers = await suppliersService.getSuppliers();
+        const match = suppliers.find(s => (s.name||'').toLowerCase() === (doc.supplierName||'').toLowerCase());
+        if (match) doc.supplierId = match.id;
+      } catch {}
+    }
     const saved = await purchasesService.addPurchase(doc); 
     try { 
-      if (doc.supplier || doc.supplierId || doc.supplierName) { 
-        const supplierKey = doc.supplierId || doc.supplierName || doc.supplier; 
-        await inventoryService.upsertDelta(`raw_${supplierKey}`, doc.quantityKg||0); 
+      if (doc.supplierId) { 
+        await inventoryService.upsertDelta(`raw_${doc.supplierId}`, doc.quantityKg||0); 
       } 
     } catch (e) { console.warn('Inventory raw purchase delta failed', e); }
     return saved; 
@@ -294,6 +330,20 @@ const remote = {
     if (key === 'buyers') return this.getBuyers({ force: true });
     return null;
   },
+  // Danger zone utilities
+  async deleteAllData() {
+    if (!adminService?.deleteAllData) throw new Error('Not supported');
+    await adminService.deleteAllData();
+    // Clear local caches
+    try {
+      localStorage.removeItem('micaflow-suppliers');
+      localStorage.removeItem('micaflow-categories');
+      localStorage.removeItem('micaflow-purchases');
+      localStorage.removeItem('micaflow-production');
+      localStorage.removeItem('micaflow-buyers');
+      localStorage.removeItem('micaflow-cache-meta');
+    } catch {}
+  }
 };
 
 export const dataService = USE_FIREBASE ? remote : local;

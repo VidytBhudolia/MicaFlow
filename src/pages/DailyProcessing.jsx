@@ -38,7 +38,7 @@ const DailyProcessing = () => {
     processingDate: todayStr,
     rawMaterialUsed: '',
     rawMaterialUnit: 'kg',
-    supplierOfRawMaterial: '',
+  supplierOfRawMaterial: '', // will hold supplierId
     productCategory: '',
     numMaleWorkers: 0,
     numFemaleWorkers: 0,
@@ -55,10 +55,12 @@ const DailyProcessing = () => {
   const [categories, setCategories] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+  const [inlineSubForm, setInlineSubForm] = useState({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
+  const [isAddingSub, setIsAddingSub] = useState(false);
 
   const getSupplierUnitOptions = () => {
     const opts = new Set(['kg', 'tonne']);
-    const sel = suppliers.find(s => s.name === formData.supplierOfRawMaterial);
+  const sel = suppliers.find(s => s.id === formData.supplierOfRawMaterial);
     if (sel) {
       const w = sel.defaultBagWeight;
       const u = String(sel.defaultUnit || 'kg').toLowerCase();
@@ -77,8 +79,15 @@ const DailyProcessing = () => {
     let mounted = true;
     (async () => {
       try {
-        const s = await dataService.getSuppliers();
-        if (mounted) setSuppliers(Array.isArray(s) ? s : []);
+        const s = await dataService.getSuppliers({ forceRefresh: true });
+        if (mounted) {
+          const list = Array.isArray(s) ? s : [];
+          setSuppliers(list);
+          // If current selection is invalid against fresh suppliers, clear it
+          if (formData.supplierOfRawMaterial && !list.find(x => String(x.id) === String(formData.supplierOfRawMaterial))) {
+            setFormData(prev => ({ ...prev, supplierOfRawMaterial: '' }));
+          }
+        }
       } catch { if (mounted) setSuppliers([]); }
       try {
         const c = await dataService.getCategories({ forceRefresh: true });
@@ -101,6 +110,7 @@ const DailyProcessing = () => {
             const { weight, unit } = normalizeBagSpec(subProduct);
             return {
               id: subProduct.id,
+              subProductId: subProduct.id,
               name: subProduct.name,
               categoryId: selectedCategory.id,
               bagWeight: weight,
@@ -119,7 +129,7 @@ const DailyProcessing = () => {
 
       // When supplier changes, set raw material unit default from supplier (prefer bag spec)
       if (field === 'supplierOfRawMaterial') {
-        const sel = suppliers.find(s => s.name === value);
+        const sel = suppliers.find(s => s.id === value);
         if (sel) {
           const w = sel.defaultBagWeight;
           const u = String(sel.defaultUnit || 'kg').toLowerCase();
@@ -135,6 +145,49 @@ const DailyProcessing = () => {
     });
   };
 
+  const rebuildProducedForCategory = (categoryId) => {
+    const selectedCategory = categories.find(cat => String(cat.id) === String(categoryId));
+    if (!selectedCategory) { setProducedProducts([]); return; }
+    const initial = (selectedCategory.subProducts || []).map(subProduct => {
+      const { weight, unit } = normalizeBagSpec(subProduct);
+      return {
+        id: subProduct.id,
+  subProductId: subProduct.id,
+        name: subProduct.name,
+        categoryId: selectedCategory.id,
+        bagWeight: weight,
+        bagUnit: unit,
+        mode: 'bags',
+        bags: '',
+        kg: '',
+        tonne: ''
+      };
+    });
+    setProducedProducts(initial);
+  };
+
+  const handleAddInlineSub = async () => {
+    const categoryId = formData.productCategory;
+    const name = (inlineSubForm.name || '').trim();
+    const weightNum = parseFloat(inlineSubForm.defaultBagWeight);
+    const unit = inlineSubForm.defaultUnit || 'kg';
+    if (!categoryId || !name || Number.isNaN(weightNum)) return;
+    if (isAddingSub) return;
+    setIsAddingSub(true);
+    try {
+      await dataService.addSubProduct(categoryId, { name, defaultBagWeight: weightNum, defaultUnit: unit });
+      const fresh = await dataService.getCategories({ force: true });
+      setCategories(Array.isArray(fresh) ? fresh : []);
+      setInlineSubForm({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
+      rebuildProducedForCategory(categoryId);
+    } catch (e) {
+      console.error('Add sub-product failed', e);
+      try { alert('Failed to add sub-product'); } catch {}
+    } finally {
+      setIsAddingSub(false);
+    }
+  };
+
   const setProductMode = (index, mode) => {
     setProducedProducts(prev => prev.map((p, i) => i === index ? { ...p, mode } : p));
   };
@@ -146,6 +199,34 @@ const DailyProcessing = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSubmitting) return;
+    // Basic client-side validation
+    if (!formData.productCategory) {
+      try { alert('Please select a product category.'); } catch {}
+      return;
+    }
+    const hasProducts = Array.isArray(producedProducts) && producedProducts.length > 0;
+    if (!hasProducts) {
+      try { alert('This category has no sub-products yet. Please add one below before submitting.'); } catch {}
+      return;
+    }
+    if (!formData.supplierOfRawMaterial) {
+      try { alert('Please select a supplier of raw material.'); } catch {}
+      return;
+    }
+    if (!suppliers.find(s => String(s.id) === String(formData.supplierOfRawMaterial))) {
+      try { alert('Selected supplier no longer exists. Please pick another.'); } catch {}
+      return;
+    }
+    const anyPositive = producedProducts.some(p => {
+      if (p.mode === 'bags') return parseFloat(p.bags) > 0;
+      if (p.mode === 'kg') return parseFloat(p.kg) > 0;
+      if (p.mode === 'tonne') return parseFloat(p.tonne) > 0;
+      return false;
+    });
+    if (!anyPositive) {
+      try { alert('Enter a positive quantity for at least one produced sub-product.'); } catch {}
+      return;
+    }
     setIsSubmitting(true);
     const enrichedProducts = producedProducts.map(p => {
       let quantityKg = 0;
@@ -198,6 +279,7 @@ const DailyProcessing = () => {
       setProducedProducts([]);
     } catch (e) {
       console.error('Failed to save daily processing', e);
+      try { alert(`Failed to submit: ${e?.message || 'Unknown error'}`); } catch {}
     } finally {
       setIsSubmitting(false);
     }
@@ -246,7 +328,7 @@ const DailyProcessing = () => {
               >
                 <option value="">Select Supplier</option>
                 {suppliers.map(supplier => (
-                  <option key={supplier.id} value={supplier.name}>
+                  <option key={supplier.id} value={supplier.id}>
                     {supplier.name}
                   </option>
                 ))}
@@ -314,6 +396,43 @@ const DailyProcessing = () => {
                 </option>
               ))}
             </select>)}
+            {/* Inline sub-product creation when category has no sub-products */}
+            {formData.productCategory && (categories.find(c => String(c.id) === String(formData.productCategory))?.subProducts?.length === 0) && (
+              <div className="mt-4 p-4 border border-dashed border-primary-orange/40 rounded bg-primary-orange/5">
+                <p className="text-sm text-secondary-blue mb-2">No sub-products defined for this category. Add one to start logging production.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input
+                    className="form-input-mica"
+                    placeholder="Sub-product name (e.g., 12+ Mesh)"
+                    value={inlineSubForm.name}
+                    onChange={(e)=>setInlineSubForm(prev=>({ ...prev, name: e.target.value }))}
+                  />
+                  <input
+                    type="number"
+                    className="form-input-mica"
+                    placeholder="Default bag weight"
+                    min="0"
+                    step="0.01"
+                    value={inlineSubForm.defaultBagWeight}
+                    onChange={(e)=>setInlineSubForm(prev=>({ ...prev, defaultBagWeight: e.target.value }))}
+                  />
+                  <select
+                    className="form-select-mica"
+                    value={inlineSubForm.defaultUnit}
+                    onChange={(e)=>setInlineSubForm(prev=>({ ...prev, defaultUnit: e.target.value }))}
+                  >
+                    <option value="kg">kg</option>
+                    <option value="tonne">tonne</option>
+                  </select>
+                </div>
+                <div className="mt-3">
+                  <button type="button" onClick={handleAddInlineSub} disabled={isAddingSub} className={`btn-secondary-mica flex items-center gap-2 ${isAddingSub ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                    {isAddingSub && <InlineSpinner size={14} />}
+                    {isAddingSub ? 'Adding…' : 'Add Sub-Product'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Produced Products Section - Dynamic based on selected category */}

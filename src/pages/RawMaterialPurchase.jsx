@@ -16,6 +16,7 @@ const RawMaterialPurchase = () => {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [formData, setFormData] = useState({
     purchaseDate: todayStr,
+    supplierId: '',
     supplierName: '',
     quantity: '',
     unit: 'kg',
@@ -43,7 +44,7 @@ const RawMaterialPurchase = () => {
   const getSupplierUnitOptions = () => {
     // Allow kg, tonne and supplier bag size if available (e.g., 50kg)
     const opts = new Set(['kg', 'tonne']);
-    const sel = suppliers.find(s => s.name === formData.supplierName);
+    const sel = suppliers.find(s => s.id === formData.supplierId);
     if (sel) {
       const w = sel.defaultBagWeight;
       const u = String(sel.defaultUnit || 'kg').toLowerCase();
@@ -65,9 +66,10 @@ const RawMaterialPurchase = () => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
 
-      if (field === 'supplierName') {
-        const sel = suppliers.find(s => s.name === value);
+      if (field === 'supplierId') {
+        const sel = suppliers.find(s => s.id === value);
         if (sel) {
+          updated.supplierName = sel.name || '';
           // Prefer explicit bag spec over plain unit
           const w = sel.defaultBagWeight;
           const u = String(sel.defaultUnit || 'kg').toLowerCase();
@@ -101,11 +103,13 @@ const RawMaterialPurchase = () => {
       });
       setFormData({
         purchaseDate: formData.purchaseDate, // keep date
-        supplier: '',
-        material: '',
+        supplierId: '',
+        supplierName: '',
         quantity: '',
         unit: 'kg',
-        price: '',
+        unitPrice: '',
+        totalAmount: '',
+        invoiceNumber: '',
         notes: ''
       });
     } catch (err) {
@@ -146,20 +150,20 @@ const RawMaterialPurchase = () => {
                 </div>
 
                 <div>
-                  <label htmlFor="supplierName" className="block text-sm font-medium text-secondary-blue mb-2">
+                  <label htmlFor="supplierId" className="block text-sm font-medium text-secondary-blue mb-2">
                     Supplier Name
                   </label>
                   <div className="flex gap-2">
                     <select
-                      id="supplierName"
+                      id="supplierId"
                       className="form-select-mica flex-1"
-                      value={formData.supplierName}
-                      onChange={(e) => handleInputChange('supplierName', e.target.value)}
+                      value={formData.supplierId}
+                      onChange={(e) => handleInputChange('supplierId', e.target.value)}
                       required
                     >
                       <option value="">Select Supplier</option>
                       {suppliers.map(supplier => (
-                        <option key={supplier.id} value={supplier.name}>
+                        <option key={supplier.id} value={supplier.id}>
                           {supplier.name}
                         </option>
                       ))}
@@ -281,6 +285,7 @@ const RawMaterialPurchase = () => {
                   className="btn-secondary-mica"
                   onClick={() => setFormData({
                     purchaseDate: '',
+                    supplierId: '',
                     supplierName: '',
                     quantity: '',
                     unit: 'kg',

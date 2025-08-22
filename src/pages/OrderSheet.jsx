@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Calendar, Plus, Trash2, FileText } from 'lucide-react';
+import InlineSpinner from '../components/InlineSpinner';
 
 const OrderSheet = () => {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -16,6 +17,7 @@ const OrderSheet = () => {
   const [orderItems, setOrderItems] = useState([
     { id: 1, product: '', quantity: '', unit: 'kg', rate: '', amount: 0 }
   ]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const productOptions = [
     'Mica Sheets - Thin (0.1-0.5mm)',
@@ -72,16 +74,35 @@ const OrderSheet = () => {
     return orderItems.reduce((total, item) => total + (item.amount || 0), 0);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const submissionData = {
-      ...formData,
-      orderItems,
-      totalAmount: calculateTotal()
-    };
-    console.log('Order Sheet Data:', submissionData);
-    // TODO: Integrate with Firebase
-    alert('Order sheet created successfully!');
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const submissionData = {
+        ...formData,
+        orderItems,
+        totalAmount: calculateTotal()
+      };
+      console.log('Order Sheet Data:', submissionData);
+      // TODO: Integrate with Firebase service here
+      // Auto-clear after successful submission
+      setFormData({
+        orderDate: todayStr,
+        customerName: '',
+        customerContact: '',
+        customerAddress: '',
+        deliveryDate: '',
+        priority: 'normal',
+        notes: ''
+      });
+      setOrderItems([
+        { id: 1, product: '', quantity: '', unit: 'kg', rate: '', amount: 0 }
+      ]);
+      try { alert('Order sheet created successfully!'); } catch {}
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -360,8 +381,9 @@ const OrderSheet = () => {
                 >
                   Clear Form
                 </button>
-                <button type="submit" className="btn-primary">
-                  Create Order Sheet
+                <button type="submit" disabled={isSubmitting} className={`btn-primary flex items-center gap-2 ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                  {isSubmitting && <InlineSpinner size={16} />}
+                  {isSubmitting ? 'Saving...' : 'Create Order Sheet'}
                 </button>
               </div>
             </form>

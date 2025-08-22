@@ -111,7 +111,17 @@ const Dashboard = () => {
           <p className="text-body">Factory overview</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => loadData(true)} className="btn-secondary-mica flex items-center gap-2" disabled={loading}>
+          <button
+            onClick={async () => {
+              await Promise.all([
+                loadData(true),
+                (async () => { try { await load(); } catch {} })(),
+                (async () => { try { await loadAnalytics(); } catch {} })(),
+              ]);
+            }}
+            className="btn-secondary-mica flex items-center gap-2"
+            disabled={loading}
+          >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>

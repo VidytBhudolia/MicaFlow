@@ -13,6 +13,7 @@ const Inventory = () => {
   const [inventoryDocs, setInventoryDocs] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [showZeroCats, setShowZeroCats] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -41,15 +42,21 @@ const Inventory = () => {
   const topSubProducts = [...(summary?.finishedStockPerSubProduct||[])].sort((a,b)=>b.totalKg-a.totalKg).slice(0,10).map(sp => ({ name: sp.name, kg: sp.totalKg }));
 
   // Build hierarchical category -> sub-products listing
-  const categoryTree = (summary?.finishedStockPerCategory||[]).map(catSum => {
-    const cat = categories.find(c => String(c.id) === String(catSum.categoryId));
+  // Build a map for quick lookup of sub-product stock
+  const spStockMap = new Map((summary?.finishedStockPerSubProduct||[]).map(s => [s.subProductId, s.totalKg]));
+  // Ensure we consider all categories (optionally include zero-stock ones)
+  const allCategoryIds = new Set((summary?.finishedStockPerCategory||[]).map(c => String(c.categoryId)));
+  if (showZeroCats) categories.forEach(c => allCategoryIds.add(String(c.id)));
+  const categoryTree = Array.from(allCategoryIds).map(cid => {
+    const cat = categories.find(c => String(c.id) === String(cid));
+    const catSum = (summary?.finishedStockPerCategory||[]).find(c => String(c.categoryId) === String(cid)) || { totalKg: 0, name: cat?.name || 'Uncategorized' };
     const subs = (cat?.subProducts||[]).map(sp => ({
       id: sp.id,
       name: sp.name,
-      stockKg: summary.finishedStockPerSubProduct.find(x => x.subProductId === sp.id)?.totalKg || 0
-    })).filter(sp => sp.stockKg > 0).sort((a,b)=>b.stockKg-a.stockKg);
-    return { id: catSum.categoryId, name: catSum.name, totalKg: catSum.totalKg, subs };
-  }).sort((a,b)=>b.totalKg-a.totalKg);
+      stockKg: spStockMap.get(sp.id) || 0
+    })).filter(sp => sp.stockKg > 0 || showZeroCats).sort((a,b)=>b.stockKg-a.stockKg);
+    return { id: cid, name: cat?.name || catSum.name, totalKg: catSum.totalKg || 0, subs };
+  }).sort((a,b)=> (b.totalKg - a.totalKg));
 
   const pieData = finishedCategoryData.filter(d => d.kg > 0);
 
@@ -61,7 +68,13 @@ const Inventory = () => {
           <h1 className="text-3xl font-bold text-secondary-blue">Inventory Overview</h1>
           <p className="text-body">Raw & finished goods current stock (kg)</p>
         </div>
-        <button onClick={load} className="ml-auto btn-secondary-mica flex items-center gap-2 text-sm"><RefreshCw className="w-4 h-4"/> Refresh</button>
+        <div className="ml-auto flex items-center gap-2">
+          <label className="text-xs text-body flex items-center gap-2">
+            <input type="checkbox" className="accent-primary-orange" checked={showZeroCats} onChange={(e)=>setShowZeroCats(e.target.checked)} />
+            Show zero-stock categories
+          </label>
+          <button onClick={load} className="btn-secondary-mica flex items-center gap-2 text-sm"><RefreshCw className="w-4 h-4"/> Refresh</button>
+        </div>
       </div>
 
       {error && <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
