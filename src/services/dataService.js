@@ -257,6 +257,11 @@ const remote = {
           await inventoryService.applyProduction(enriched);
         }
       } catch (e) {
+        const msg = String(e?.message || '');
+        // If failure is due to insufficient raw stock, do NOT fallback; surface error
+        if (msg.toLowerCase().includes('insufficient raw stock')) {
+          throw e;
+        }
         console.warn('Inventory transaction update failed; retrying non-transactional applyProduction', e);
         try { await inventoryService.applyProduction(enriched); } catch (e2) { console.warn('Inventory fallback update failed', e2); }
       }
@@ -268,6 +273,7 @@ const remote = {
   // Also clear any dashboard-related aggregations consumers may cache
   invalidateCache('categories');
   invalidateCache('suppliers');
+  try { (await import('./dataService')).micaflowEvents?.bump?.(); } catch {}
     return saved;
   },
   async addPurchase(doc) { 
@@ -348,3 +354,9 @@ const remote = {
 
 export const dataService = USE_FIREBASE ? remote : local;
 export { normalizeCategories, normalizeSubProduct };
+
+// Soft event for dashboards to optionally listen to (no-op if unused)
+export const micaflowEvents = {
+  _ver: 0,
+  bump() { this._ver = (this._ver + 1) % 1e9; try { window.dispatchEvent(new CustomEvent('micaflow:updated')); } catch {} }
+};

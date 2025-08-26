@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown, RefreshCw, List, Wrench } from 'lucide-react';
+import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown, RefreshCw, List, Wrench, CheckCircle } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import { settingsService } from '../services/firebaseServices';
 
 // Helper to generate unique IDs reliably
 const getUUID = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -74,6 +75,22 @@ const Management = () => {
   const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
   const [isSubmittingBuyer, setIsSubmittingBuyer] = useState(false);
 
+  // Dashboard Settings State
+  const [featuredSubProducts, setFeaturedSubProducts] = useState([]); // array of {categoryId, subProductId}
+  const [availableSubOptions, setAvailableSubOptions] = useState([]); // built from categories
+  const FEATURED_LIMIT = 6;
+  const STAT_OPTIONS = [
+    { key: 'rawStock', label: 'Raw Stock (Kg)' },
+    { key: 'totalProducedKg', label: 'Total Produced (Kg, range)' },
+    { key: 'totalPurchasedKg', label: 'Total Purchased (Kg, range)' },
+    { key: 'suppliersCount', label: 'Suppliers Count' },
+    { key: 'categoriesCount', label: 'Categories Count' },
+    { key: 'subProductsCount', label: 'Sub-Products Count' },
+    { key: 'thisMonthDiesel', label: 'This Month Diesel (L)' },
+    { key: 'thisMonthWorkers', label: 'This Month Workers' },
+  ];
+  const [topCards, setTopCards] = useState([]);
+
   // Load suppliers & categories from dataService (supports async/remote)
   useEffect(() => {
     let mounted = true;
@@ -113,6 +130,14 @@ const Management = () => {
     loadSuppliers();
     loadCategories(false);
     loadBuyers();
+    // Load dashboard settings
+  (async () => {
+      try {
+        const s = await settingsService.getDashboardSettings();
+        setFeaturedSubProducts(Array.isArray(s.featuredSubProducts) ? s.featuredSubProducts : []);
+    setTopCards(Array.isArray(s.topCards) ? s.topCards : []);
+      } catch {}
+    })();
     return () => { mounted = false; };
   }, []);
 
@@ -397,6 +422,37 @@ const Management = () => {
   const Spinner = () => (
     <span className="inline-block w-4 h-4 border-2 border-primary-orange border-t-transparent rounded-full animate-spin align-middle" aria-label="Loading" />
   );
+
+  // Build selectable sub-options from categories
+  useEffect(() => {
+    const opts = [];
+    (categories||[]).forEach(cat => {
+      (cat.subProducts||[]).forEach(sp => {
+        opts.push({ categoryId: cat.id, categoryName: cat.name, subProductId: sp.id, subProductName: sp.name });
+      });
+    });
+    setAvailableSubOptions(opts);
+  }, [categories]);
+
+  const toggleFeatured = (opt) => {
+    const key = `${opt.categoryId}:${opt.subProductId}`;
+    const exists = featuredSubProducts.find(x => `${x.categoryId}:${x.subProductId}` === key);
+    if (exists) {
+      setFeaturedSubProducts(prev => prev.filter(x => `${x.categoryId}:${x.subProductId}` !== key));
+    } else {
+      setFeaturedSubProducts(prev => prev.length >= FEATURED_LIMIT ? prev : [...prev, { categoryId: opt.categoryId, subProductId: opt.subProductId }]);
+    }
+  };
+
+  const saveDashboardSettings = async () => {
+    try {
+  await settingsService.updateDashboardSettings({ featuredSubProducts, topCards });
+      try { alert('Dashboard settings saved.'); } catch {}
+    } catch (e) {
+      console.error('Save dashboard settings failed', e);
+      try { alert('Failed to save settings'); } catch {}
+    }
+  };
 
   const renderDangerTab = () => (
     <div className="space-y-4">
@@ -950,6 +1006,53 @@ const Management = () => {
     </div>
   );
 
+  const renderDashboardTab = () => (
+    <div className="space-y-6">
+      <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-secondary-blue">Dashboard Settings</h3>
+            <p className="text-body text-sm">Choose up to 6 sub-categories to feature across the app.</p>
+          </div>
+          <button className="btn-secondary-mica flex items-center gap-2" onClick={saveDashboardSettings}><CheckCircle className="w-4 h-4"/>Save</button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {availableSubOptions.map(opt => {
+            const selected = !!featuredSubProducts.find(x => String(x.categoryId) === String(opt.categoryId) && String(x.subProductId) === String(opt.subProductId));
+            const disabled = !selected && featuredSubProducts.length >= FEATURED_LIMIT;
+            return (
+              <button key={`${opt.categoryId}:${opt.subProductId}`} type="button" onClick={()=>!disabled && toggleFeatured(opt)} className={`flex items-center justify-between p-3 border rounded ${selected ? 'border-primary-orange bg-primary-orange/5' : 'border-light-gray-border bg-white'} ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary-orange'}`}>
+                <div className="text-left">
+                  <div className="text-sm font-medium text-secondary-blue">{opt.subProductName}</div>
+                  <div className="text-xs text-body">{opt.categoryName}</div>
+                </div>
+                {selected && <CheckCircle className="w-5 h-5 text-primary-orange"/>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-xs text-body mt-2">Selected: {featuredSubProducts.length}/{FEATURED_LIMIT}</div>
+      </div>
+      <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border">
+        <h4 className="text-sm font-semibold text-secondary-blue mb-3">Top Row Stats</h4>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+          {STAT_OPTIONS.map(opt => {
+            const checked = topCards.includes(opt.key);
+            return (
+              <label key={opt.key} className={`flex items-center gap-2 p-2 border rounded ${checked ? 'border-primary-orange bg-primary-orange/5' : 'border-light-gray-border'}`}>
+                <input type="checkbox" className="accent-primary-orange" checked={checked} onChange={(e)=>{
+                  setTopCards(prev => e.target.checked ? Array.from(new Set([...prev, opt.key])) : prev.filter(k=>k!==opt.key));
+                }} />
+                <span className="text-sm text-secondary-blue">{opt.label}</span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-body mt-2">Pick any combination. Stats render on Dashboard in your chosen order.</p>
+      </div>
+    </div>
+  );
+
   const renderLogsTab = () => (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold text-secondary-blue flex items-center gap-2"><List className="w-5 h-5"/>Activity Logs</h3>
@@ -1006,6 +1109,7 @@ const Management = () => {
             <button onClick={() => setActiveTab('suppliers')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'suppliers' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Suppliers</button>
             <button onClick={() => setActiveTab('buyers')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'buyers' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Buyers</button>
             <button onClick={() => setActiveTab('categories')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'categories' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Categories</button>
+            <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'dashboard' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Dashboard</button>
             <button onClick={() => setActiveTab('logs')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'logs' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Logs</button>
             <button onClick={() => setActiveTab('adjustments')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'adjustments' ? 'border-primary-orange text-primary-orange' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Adjustments</button>
             <button onClick={() => setActiveTab('danger')} className={`px-6 py-4 text-sm font-medium border-b-2 ${activeTab === 'danger' ? 'border-red-600 text-red-600' : 'border-transparent text-body hover:text-secondary-blue hover:border-light-gray-border'}`}>Danger</button>
@@ -1015,6 +1119,7 @@ const Management = () => {
           {activeTab === 'suppliers' && renderSuppliersTab()}
           {activeTab === 'buyers' && renderBuyersTab()}
           {activeTab === 'categories' && renderCategoriesTab()}
+          {activeTab === 'dashboard' && renderDashboardTab()}
           {activeTab === 'logs' && renderLogsTab()}
           {activeTab === 'adjustments' && renderAdjustmentsTab()}
           {activeTab === 'danger' && renderDangerTab()}

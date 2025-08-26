@@ -1,5 +1,5 @@
 // Dashboard aggregation helpers
-import { collection, getDocs, query } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { categoriesService, suppliersService } from './firebaseServices';
 
@@ -130,4 +130,109 @@ export async function getDailyStats({ range } = {}) {
     };
   }).sort((a,b) => a.date.localeCompare(b.date));
 }
-export default { getInventorySummary, getDailyStats };
+// Returns time series for a category where each point sums to 100%: { date, series: { [subProductId]: pct, loss: pct }, labels }
+export async function getCategoryStackedPercentSeries(categoryId, { points = 30 } = {}) {
+  const categories = await categoriesService.getCategories();
+  const cat = categories.find(c => String(c.id) === String(categoryId));
+  const subNames = Object.fromEntries((cat?.subProducts || []).map(sp => [sp.id, sp.name]));
+  let rows = [];
+  try {
+    const qRef = query(
+      collection(db, 'daily_category_stats'),
+      where('categoryId','==', categoryId),
+      orderBy('date','desc'),
+      limit(points)
+    );
+    const snap = await getDocs(qRef);
+    rows = snap.docs.map(d => d.data()).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  } catch (e) {
+    // likely missing composite index; fallback to client-side filter
+    console.warn('Indexed query failed, falling back to full scan', e);
+    const snap = await getDocs(collection(db, 'daily_category_stats'));
+    rows = snap.docs
+      .map(d => d.data())
+      .filter(r => String(r.categoryId) === String(categoryId))
+      .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+      .slice(-points);
+  }
+  // If no analytics rows yet (new setup or pending backfill), derive from production as a fallback
+  if (!rows || rows.length === 0) {
+    try {
+      const prodSnap = await getDocs(collection(db, 'production'));
+      // Group by date
+      const byDate = new Map(); // date -> { raw, loss, bySub: {spId: kg}}
+      prodSnap.docs.forEach(d => {
+        const p = d.data() || {};
+        if (String(p.productCategory) !== String(categoryId)) return;
+        const date = p.processingDate || p.date || (p.createdAt ? String(p.createdAt).slice(0,10) : '');
+        if (!date) return;
+        const raw = Number(p.rawMaterialUsedKg || p.rawUsedKg || 0) || 0;
+        const bySub = {};
+        let producedSum = 0;
+        (p.producedProducts || []).forEach(pp => {
+          const sp = pp.subProductId || pp.id || pp.subProduct;
+          const kg = Number(pp.quantityKg) || 0;
+          if (!sp || kg <= 0) return;
+          bySub[sp] = (bySub[sp] || 0) + kg;
+          producedSum += kg;
+        });
+        const loss = p.lossKg != null ? Number(p.lossKg)||0 : Math.max(0, raw - producedSum);
+        const cur = byDate.get(date) || { raw: 0, loss: 0, bySub: {} };
+        cur.raw += raw;
+        cur.loss += loss;
+        Object.entries(bySub).forEach(([k,v]) => { cur.bySub[k] = (cur.bySub[k]||0) + v; });
+        byDate.set(date, cur);
+      });
+      const all = Array.from(byDate.entries()).map(([date, v]) => ({ date, rawUsedKg: v.raw, lossKg: v.loss, producedKgBySub: v.bySub }))
+        .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+        .slice(-points);
+      rows = all;
+    } catch (e) {
+      console.warn('Production-derived fallback for category series failed', e);
+    }
+  }
+  return rows.map(r => {
+    const raw = Number(r.rawUsedKg) || 0;
+    const producedBySub = r.producedKgBySub || {};
+    const producedSum = Object.values(producedBySub).reduce((s, v) => s + (Number(v) || 0), 0);
+    const lossKg = Number(r.lossKg) || Math.max(0, raw - producedSum);
+    const denom = raw > 0 ? raw : (producedSum + lossKg || 1);
+    const series = {};
+    Object.entries(producedBySub).forEach(([spId, kg]) => { series[spId] = (Number(kg) || 0) / denom * 100; });
+    const sumOthers = Object.values(series).reduce((s, v) => s + v, 0);
+    series.loss = Math.max(0, 100 - sumOthers);
+    return { date: r.date, series, labels: { ...subNames, loss: 'Loss' } };
+  });
+}
+
+// Category daily totals for Raw vs Produced chart
+export async function getCategoryDailyTotals(categoryId, { points = 60 } = {}) {
+  if (!categoryId) return [];
+  let rows = [];
+  try {
+    const qRef = query(
+      collection(db, 'daily_category_stats'),
+      where('categoryId','==', categoryId),
+      orderBy('date','asc')
+    );
+    const snap = await getDocs(qRef);
+    rows = snap.docs.map(d => d.data());
+  } catch (e) {
+    try {
+      const snap = await getDocs(collection(db, 'daily_category_stats'));
+      rows = snap.docs.map(d => d.data()).filter(r => String(r.categoryId) === String(categoryId));
+    } catch {}
+  }
+  const series = rows
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+    .slice(-points)
+    .map(r => ({
+      date: r.date,
+      totalRawUsedKg: Number(r.rawUsedKg)||0,
+      totalProducedKg: Object.values(r.producedKgBySub||{}).reduce((s,v)=>s+(Number(v)||0),0),
+      totalLossKg: Number(r.lossKg)||0,
+    }));
+  return series;
+}
+
+export default { getInventorySummary, getDailyStats, getCategoryStackedPercentSeries, getCategoryDailyTotals };

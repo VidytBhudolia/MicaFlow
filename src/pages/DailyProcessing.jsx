@@ -58,6 +58,13 @@ const DailyProcessing = () => {
   const [inlineSubForm, setInlineSubForm] = useState({ name: '', defaultBagWeight: '', defaultUnit: 'kg' });
   const [isAddingSub, setIsAddingSub] = useState(false);
 
+  // UX: common props to stabilize numeric inputs
+  const numberInputProps = {
+    inputMode: 'decimal',
+    onFocus: (e) => { try { e.target.select(); } catch {} },
+    onWheel: (e) => { try { e.currentTarget.blur(); } catch {} }, // avoid wheel changing values
+  };
+
   const getSupplierUnitOptions = () => {
     const opts = new Set(['kg', 'tonne']);
   const sel = suppliers.find(s => s.id === formData.supplierOfRawMaterial);
@@ -217,6 +224,21 @@ const DailyProcessing = () => {
       try { alert('Selected supplier no longer exists. Please pick another.'); } catch {}
       return;
     }
+    // Raw availability check (client-side): don't allow using more than in stock for selected supplier
+    try {
+      const { inventoryService } = await import('../services/firebaseServices');
+      if (inventoryService?.getInventoryItems) {
+        const items = await inventoryService.getInventoryItems();
+        const rawId = formData.supplierOfRawMaterial ? `raw_${formData.supplierOfRawMaterial}` : 'raw_unknown';
+        const rawDoc = (items || []).find(i => i.id === rawId);
+        const available = Number(rawDoc?.stockKg || 0);
+        const requested = unitToKg(formData.rawMaterialUsed, formData.rawMaterialUnit);
+        if (requested > available + 1e-6) {
+          try { alert(`Not enough raw stock. Available: ${available.toFixed(2)} kg, Requested: ${requested.toFixed(2)} kg`); } catch {}
+          return;
+        }
+      }
+    } catch {}
     const anyPositive = producedProducts.some(p => {
       if (p.mode === 'bags') return parseFloat(p.bags) > 0;
       if (p.mode === 'kg') return parseFloat(p.kg) > 0;
@@ -347,10 +369,11 @@ const DailyProcessing = () => {
                 id="rawMaterialUsed"
                 className="form-input-mica"
                 placeholder="0.00"
-                step="0.01"
+                  step="0.01"
                 min="0"
                 value={formData.rawMaterialUsed}
                 onChange={(e) => handleInputChange('rawMaterialUsed', e.target.value)}
+                  {...numberInputProps}
                 required
               />
             </div>
@@ -415,6 +438,7 @@ const DailyProcessing = () => {
                     step="0.01"
                     value={inlineSubForm.defaultBagWeight}
                     onChange={(e)=>setInlineSubForm(prev=>({ ...prev, defaultBagWeight: e.target.value }))}
+                    {...numberInputProps}
                   />
                   <select
                     className="form-select-mica"
@@ -485,6 +509,7 @@ const DailyProcessing = () => {
                             min="0"
                             value={product.bags}
                             onChange={(e) => handleProductField(index, { bags: e.target.value })}
+                            {...numberInputProps}
                             required
                           />
                         </div>
@@ -510,6 +535,7 @@ const DailyProcessing = () => {
                             min="0"
                             value={product.kg}
                             onChange={(e) => handleProductField(index, { kg: e.target.value })}
+                            {...numberInputProps}
                             required
                           />
                         </div>
@@ -528,6 +554,7 @@ const DailyProcessing = () => {
                             min="0"
                             value={product.tonne}
                             onChange={(e) => handleProductField(index, { tonne: e.target.value })}
+                            {...numberInputProps}
                             required
                           />
                         </div>
@@ -554,6 +581,7 @@ const DailyProcessing = () => {
                   min="0"
                   value={formData.numMaleWorkers}
                   onChange={(e) => handleInputChange('numMaleWorkers', e.target.value)}
+                  {...numberInputProps}
                 />
               </div>
 
@@ -568,6 +596,7 @@ const DailyProcessing = () => {
                   min="0"
                   value={formData.numFemaleWorkers}
                   onChange={(e) => handleInputChange('numFemaleWorkers', e.target.value)}
+                  {...numberInputProps}
                 />
               </div>
 
@@ -583,6 +612,7 @@ const DailyProcessing = () => {
                   step="0.1"
                   value={formData.dieselGeneratorHours}
                   onChange={(e) => handleInputChange('dieselGeneratorHours', e.target.value)}
+                  {...numberInputProps}
                 />
               </div>
 
@@ -598,6 +628,7 @@ const DailyProcessing = () => {
                   step="0.1"
                   value={formData.dieselUsedLiters}
                   onChange={(e) => handleInputChange('dieselUsedLiters', e.target.value)}
+                  {...numberInputProps}
                 />
               </div>
 
@@ -612,6 +643,7 @@ const DailyProcessing = () => {
                   min="0"
                   value={formData.hammerChanges}
                   onChange={(e) => handleInputChange('hammerChanges', e.target.value)}
+                  {...numberInputProps}
                 />
               </div>
 
@@ -626,6 +658,7 @@ const DailyProcessing = () => {
                   min="0"
                   value={formData.knifeChanges}
                   onChange={(e) => handleInputChange('knifeChanges', e.target.value)}
+                  {...numberInputProps}
                 />
               </div>
             </div>

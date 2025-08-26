@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Calendar, Plus, Trash2, FileText } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Calendar, Plus, Trash2, FileText, Package } from 'lucide-react';
 import InlineSpinner from '../components/InlineSpinner';
+import { dataService } from '../services/dataService';
+import { ordersService, inventoryService } from '../services/firebaseServices';
 
 const OrderSheet = () => {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -15,21 +17,29 @@ const OrderSheet = () => {
   });
 
   const [orderItems, setOrderItems] = useState([
-    { id: 1, product: '', quantity: '', unit: 'kg', rate: '', amount: 0 }
+    { id: 1, categoryId: '', subProductId: '', quantityKg: '', bagWeight: '', bags: '', unit: 'kg', rate: '', amount: 0, availableKg: 0 }
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [inventory, setInventory] = useState([]);
 
-  const productOptions = [
-    'Mica Sheets - Thin (0.1-0.5mm)',
-    'Mica Sheets - Medium (0.5-1mm)',
-    'Mica Sheets - Thick (1-2mm)',
-    'Mica Powder - Fine',
-    'Mica Powder - Coarse',
-    'Mica Flakes - Small',
-    'Mica Flakes - Medium',
-    'Mica Flakes - Large',
-    'Custom Product'
-  ];
+  useEffect(() => {
+    (async () => {
+      try {
+        const [cats, inv] = await Promise.all([
+          dataService.getCategories({ force: true }),
+          dataService.getInventory({ force: true })
+        ]);
+        setCategories(Array.isArray(cats) ? cats : []);
+        setInventory(Array.isArray(inv) ? inv : []);
+      } catch {}
+    })();
+  }, []);
+
+  const getAvailableKg = (subProductId) => {
+    const item = inventory.find(x => x.id === `finished_${subProductId}`);
+    return Number(item?.stockKg || 0);
+  };
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -40,12 +50,33 @@ const OrderSheet = () => {
       const updated = prev.map((item, i) => {
         if (i === index) {
           const newItem = { ...item, [field]: value };
-          
+          // Reset subProduct when category changes
+          if (field === 'categoryId') {
+            newItem.subProductId = '';
+            newItem.availableKg = 0;
+            newItem.quantityKg = '';
+            newItem.bags = '';
+          }
+          // On subProduct change, fetch available
+          if (field === 'subProductId') {
+            newItem.availableKg = getAvailableKg(value);
+          }
+          // Bags to quantity and vice-versa
+          if (field === 'bags') {
+            const bw = parseFloat(newItem.bagWeight) || 0;
+            const bags = parseFloat(value) || 0;
+            newItem.quantityKg = bw > 0 ? (bags * bw).toString() : newItem.quantityKg;
+          }
+          if (field === 'bagWeight') {
+            const bw = parseFloat(value) || 0;
+            const bags = parseFloat(newItem.bags) || 0;
+            newItem.quantityKg = bw > 0 ? (bags * bw).toString() : newItem.quantityKg;
+          }
           // Auto-calculate amount when quantity or rate changes
-          if (field === 'quantity' || field === 'rate') {
-            const quantity = parseFloat(field === 'quantity' ? value : newItem.quantity) || 0;
+          if (field === 'quantityKg' || field === 'rate') {
+            const qty = parseFloat(field === 'quantityKg' ? value : newItem.quantityKg) || 0;
             const rate = parseFloat(field === 'rate' ? value : newItem.rate) || 0;
-            newItem.amount = quantity * rate;
+            newItem.amount = qty * rate;
           }
           
           return newItem;
@@ -60,7 +91,7 @@ const OrderSheet = () => {
     const newId = Math.max(...orderItems.map(item => item.id)) + 1;
     setOrderItems(prev => [
       ...prev,
-      { id: newId, product: '', quantity: '', unit: 'kg', rate: '', amount: 0 }
+      { id: newId, categoryId: '', subProductId: '', quantityKg: '', bagWeight: '', bags: '', unit: 'kg', rate: '', amount: 0, availableKg: 0 }
     ]);
   };
 
@@ -79,13 +110,30 @@ const OrderSheet = () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
+      // Validate availability per line
+      for (const it of orderItems) {
+        const avail = getAvailableKg(it.subProductId);
+        const qty = parseFloat(it.quantityKg) || 0;
+        if (qty <= 0 || !it.subProductId) throw new Error('Select a sub-product and enter quantity');
+        if (qty > avail) throw new Error(`Insufficient stock for selected sub-product. Have ${avail} kg, need ${qty} kg.`);
+      }
+      // Create order and deduct inventory transactionally
       const submissionData = {
         ...formData,
-        orderItems,
+        items: orderItems.map(it => ({
+          categoryId: it.categoryId,
+          subProductId: it.subProductId,
+          quantityKg: parseFloat(it.quantityKg) || 0,
+          bagWeight: parseFloat(it.bagWeight) || 0,
+          bags: parseFloat(it.bags) || 0,
+          unit: it.unit,
+          rate: parseFloat(it.rate) || 0,
+          amount: it.amount || 0
+        })),
         totalAmount: calculateTotal()
       };
-      console.log('Order Sheet Data:', submissionData);
-      // TODO: Integrate with Firebase service here
+      await inventoryService.applyOrderFulfillment(submissionData.items);
+      await ordersService.addOrder(submissionData);
       // Auto-clear after successful submission
       setFormData({
         orderDate: todayStr,
@@ -97,9 +145,9 @@ const OrderSheet = () => {
         notes: ''
       });
       setOrderItems([
-        { id: 1, product: '', quantity: '', unit: 'kg', rate: '', amount: 0 }
+        { id: 1, categoryId: '', subProductId: '', quantityKg: '', bagWeight: '', bags: '', unit: 'kg', rate: '', amount: 0, availableKg: 0 }
       ]);
-      try { alert('Order sheet created successfully!'); } catch {}
+      try { alert('Order sheet created and inventory updated.'); } catch {}
     } finally {
       setIsSubmitting(false);
     }
@@ -243,21 +291,22 @@ const OrderSheet = () => {
                   {orderItems.map((item, index) => (
                     <div key={item.id} className="border border-light-gray-border rounded-lg p-4 bg-white-bg">
                       <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-secondary-blue mb-2">
-                            Product
-                          </label>
-                          <select
-                            className="form-select"
-                            value={item.product}
-                            onChange={(e) => handleItemChange(index, 'product', e.target.value)}
-                            required
-                          >
-                            <option value="">Select Product</option>
-                            {productOptions.map(product => (
-                              <option key={product} value={product}>{product}</option>
-                            ))}
+                        <div>
+                          <label className="block text-sm font-medium text-secondary-blue mb-2">Category</label>
+                          <select className="form-select" value={item.categoryId} onChange={(e)=>handleItemChange(index,'categoryId',e.target.value)} required>
+                            <option value="">Select</option>
+                            {categories.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-secondary-blue mb-2">Sub-Product</label>
+                          <select className="form-select" value={item.subProductId} onChange={(e)=>handleItemChange(index,'subProductId',e.target.value)} required>
+                            <option value="">Select</option>
+                            {(categories.find(c=>String(c.id)===String(item.categoryId))?.subProducts||[]).map(sp => (<option key={sp.id} value={sp.id}>{sp.name}</option>))}
+                          </select>
+                          {item.subProductId && (
+                            <div className="mt-1 text-xs text-body flex items-center gap-1"><Package className="w-3 h-3"/> Available: <span className="font-medium text-secondary-blue">{getAvailableKg(item.subProductId).toLocaleString()} kg</span></div>
+                          )}
                         </div>
 
                         <div>
@@ -270,31 +319,29 @@ const OrderSheet = () => {
                             placeholder="0.00"
                             step="0.01"
                             min="0"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                            value={item.quantityKg}
+                            onChange={(e) => handleItemChange(index, 'quantityKg', e.target.value)}
                             required
                           />
                         </div>
 
                         <div>
                           <label className="block text-sm font-medium text-secondary-blue mb-2">
-                            Unit
+                            Bag Weight (kg)
                           </label>
-                          <select
-                            className="form-select"
-                            value={item.unit}
-                            onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
-                          >
-                            <option value="kg">kg</option>
-                            <option value="ton">ton</option>
-                            <option value="pcs">pcs</option>
-                            <option value="sheets">sheets</option>
-                          </select>
+                          <input type="number" className="form-input-mica" placeholder="e.g., 50" step="0.01" min="0" value={item.bagWeight} onChange={(e)=>handleItemChange(index,'bagWeight',e.target.value)} />
                         </div>
 
                         <div>
                           <label className="block text-sm font-medium text-secondary-blue mb-2">
-                            Rate (₹)
+                            Bags
+                          </label>
+                          <input type="number" className="form-input-mica" placeholder="e.g., 20" step="1" min="0" value={item.bags} onChange={(e)=>handleItemChange(index,'bags',e.target.value)} />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-secondary-blue mb-2">
+                            Rate (₹/kg)
                           </label>
                           <input
                             type="number"
@@ -366,7 +413,7 @@ const OrderSheet = () => {
                   className="btn-secondary"
                   onClick={() => {
                     setFormData({
-                      orderDate: '',
+                      orderDate: todayStr,
                       customerName: '',
                       customerContact: '',
                       customerAddress: '',
@@ -375,7 +422,7 @@ const OrderSheet = () => {
                       notes: ''
                     });
                     setOrderItems([
-                      { id: 1, product: '', quantity: '', unit: 'kg', rate: '', amount: 0 }
+                      { id: 1, categoryId: '', subProductId: '', quantityKg: '', bagWeight: '', bags: '', unit: 'kg', rate: '', amount: 0, availableKg: 0 }
                     ]);
                   }}
                 >

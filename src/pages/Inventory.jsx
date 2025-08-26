@@ -101,15 +101,15 @@ const Inventory = () => {
             </div>
           </div>
 
-          <div className="grid gap-8 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <div className="bg-white-bg rounded-lg shadow p-4 border border-light-gray-border">
               <h3 className="font-semibold mb-3 text-secondary-blue">Raw Stock by Supplier</h3>
               {rawSupplierData.length === 0 ? <p className="text-sm text-body">No raw stock.</p> : (
-                <div className="h-72">
+                <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={rawSupplierData} layout="vertical" margin={{left: 60, right: 16, top: 10, bottom: 10}}>
+                    <BarChart data={rawSupplierData} layout="vertical" margin={{left: 50, right: 8, top: 4, bottom: 4}}>
                       <XAxis type="number" tickFormatter={v=>v.toFixed(0)} />
-                      <YAxis type="category" dataKey="name" width={120} />
+                      <YAxis type="category" dataKey="name" width={100} />
                       <Tooltip formatter={(v)=>[v+' kg','Stock']} />
                       <Bar dataKey="kg" fill="#2563eb" radius={[0,4,4,0]} />
                     </BarChart>
@@ -121,14 +121,14 @@ const Inventory = () => {
             <div className="bg-white-bg rounded-lg shadow p-4 border border-light-gray-border">
               <h3 className="font-semibold mb-3 text-secondary-blue">Finished Stock by Category</h3>
               {finishedCategoryData.length === 0 ? <p className="text-sm text-body">No finished stock.</p> : (
-                <div className="h-72">
+                <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={pieData} dataKey="kg" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={2}>
+                      <Pie data={pieData} dataKey="kg" nameKey="name" innerRadius={45} outerRadius={85} paddingAngle={2}>
                         {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                       </Pie>
                       <Tooltip formatter={(v, n)=>[v+' kg', n]} />
-                      <Legend verticalAlign="bottom" height={36} />
+                      <Legend verticalAlign="bottom" height={24} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -138,10 +138,10 @@ const Inventory = () => {
             <div className="bg-white-bg rounded-lg shadow p-4 border border-light-gray-border lg:col-span-2">
               <h3 className="font-semibold mb-3 text-secondary-blue">Top Sub-Products (kg)</h3>
               {topSubProducts.length === 0 ? <p className="text-sm text-body">No finished sub-product stock.</p> : (
-                <div className="h-80">
+                <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topSubProducts} margin={{ left: 20, right: 16, top: 10, bottom: 40 }}>
-                      <XAxis dataKey="name" interval={0} angle={-30} textAnchor="end" height={70} />
+                    <BarChart data={topSubProducts} margin={{ left: 16, right: 8, top: 4, bottom: 28 }}>
+                      <XAxis dataKey="name" interval={0} angle={-30} textAnchor="end" height={56} />
                       <YAxis tickFormatter={v=>v.toFixed(0)} />
                       <Tooltip formatter={(v)=>[v+' kg','Stock']} />
                       <Bar dataKey="kg" fill="#FF7A00" radius={[4,4,0,0]} />

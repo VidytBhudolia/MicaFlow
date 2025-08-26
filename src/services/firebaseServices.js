@@ -255,7 +255,7 @@ export const inventoryService = {
     const updates = [];
     if (production.rawMaterialUsedKg) {
       const rawId = production.supplierOfRawMaterial ? `raw_${production.supplierOfRawMaterial}` : 'raw_unknown';
-      updates.push({ id: rawId, delta: -Math.abs(production.rawMaterialUsedKg) });
+  updates.push({ id: rawId, delta: -Math.abs(production.rawMaterialUsedKg) });
     }
     (production.producedProducts || []).forEach(p => {
       const spKey = p.subProductId || p.id || p.subProduct; if (!spKey) return;
@@ -268,6 +268,33 @@ export const inventoryService = {
         const ref = doc(db, 'inventory', u.id);
         const snap = await tx.get(ref);
         const current = snap.exists() ? (snap.data().stockKg || 0) : 0;
+        // Prevent over-usage of raw stock
+        if (u.id.startsWith('raw_') && (current + u.delta) < -1e-6) {
+          throw new Error(`Insufficient raw stock for ${u.id.replace('raw_','supplier ')}: have ${current} kg, need ${Math.abs(u.delta)} kg`);
+        }
+        const next = current + u.delta;
+        tx.set(ref, { id: u.id, stockKg: next, updatedAt: serverTimestamp() }, { merge: true });
+      }
+    });
+  },
+  // Deduct finished stock for an order in a single transaction
+  async applyOrderFulfillment(items) {
+    // items: [{ subProductId, quantityKg }]
+    const updates = [];
+    for (const it of (items || [])) {
+      const spKey = it.subProductId || it.id || it.subProduct; if (!spKey) continue;
+      const qty = Math.abs(Number(it.quantityKg || 0)); if (!qty) continue;
+      updates.push({ id: `finished_${spKey}`, delta: -qty });
+    }
+    if (updates.length === 0) return;
+    await runTransaction(db, async (tx) => {
+      for (const u of updates) {
+        const ref = doc(db, 'inventory', u.id);
+        const snap = await tx.get(ref);
+        const current = snap.exists() ? (snap.data().stockKg || 0) : 0;
+        if ((current + u.delta) < -1e-6) {
+          throw new Error(`Insufficient finished stock for ${u.id.replace('finished_','sub-product ')}: have ${current} kg, need ${Math.abs(u.delta)} kg`);
+        }
         const next = current + u.delta;
         tx.set(ref, { id: u.id, stockKg: next, updatedAt: serverTimestamp() }, { merge: true });
       }
@@ -537,6 +564,7 @@ export const adminService = {
       'production',
       'purchases',
       'daily_stats',
+      'daily_category_stats',
       'orders',
       'buyers',
       'suppliers',
@@ -564,5 +592,29 @@ export const adminService = {
         await deleteDoc(doc(db, 'categories', c.id));
       }
     } catch (e) { console.warn('Failed deleting categories', e); }
+  }
+};
+
+// App settings (dashboard config, featured sub-products, etc.)
+export const settingsService = {
+  async getDashboardSettings() {
+    const ref = doc(db, 'app_settings', 'dashboard');
+    const snap = await getDoc(ref);
+    const defaults = {
+  // Supported stat keys for dashboard top cards
+  // rawStock, totalProducedKg, totalPurchasedKg, suppliersCount, categoriesCount, subProductsCount,
+  // thisMonthDiesel, thisMonthWorkers
+  topCards: ['rawStock','totalProducedKg','totalPurchasedKg'],
+      featuredSubProducts: [],
+      updatedAt: new Date().toISOString()
+    };
+    if (!snap.exists()) return defaults;
+    const data = snap.data() || {};
+    return { ...defaults, ...data };
+  },
+  async updateDashboardSettings(patch) {
+    const ref = doc(db, 'app_settings', 'dashboard');
+    await setDoc(ref, { ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+    return patch;
   }
 };
