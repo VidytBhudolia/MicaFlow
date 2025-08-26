@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Plus, Edit, Trash2, Search, ChevronRight, ChevronDown, RefreshCw, List, Wrench, CheckCircle } from 'lucide-react';
 import { dataService } from '../services/dataService';
-import { settingsService } from '../services/firebaseServices';
+import { settingsService, inventoryService } from '../services/firebaseServices';
 
 // Helper to generate unique IDs reliably
 const getUUID = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -91,6 +91,17 @@ const Management = () => {
   ];
   const [topCards, setTopCards] = useState([]);
 
+  // Adjustments State
+  const [adjustType, setAdjustType] = useState('finished'); // 'finished' | 'raw'
+  const [adjCategoryId, setAdjCategoryId] = useState('');
+  const [adjSubProductId, setAdjSubProductId] = useState('');
+  const [adjSupplierId, setAdjSupplierId] = useState('');
+  const [adjDelta, setAdjDelta] = useState('');
+  const [adjReason, setAdjReason] = useState('correction');
+  const [adjNotes, setAdjNotes] = useState('');
+  const [adjSubmitting, setAdjSubmitting] = useState(false);
+  const [inventory, setInventory] = useState([]);
+
   // Load suppliers & categories from dataService (supports async/remote)
   useEffect(() => {
     let mounted = true;
@@ -130,6 +141,8 @@ const Management = () => {
     loadSuppliers();
     loadCategories(false);
     loadBuyers();
+  // initial inventory load
+  (async()=>{ try { const inv = await dataService.getInventory(); setInventory(Array.isArray(inv)?inv:[]); } catch { setInventory([]); } })();
     // Load dashboard settings
   (async () => {
       try {
@@ -140,6 +153,28 @@ const Management = () => {
     })();
     return () => { mounted = false; };
   }, []);
+
+  // When switching to Adjustments tab, refresh inventory once
+  useEffect(() => {
+    if (activeTab === 'adjustments') {
+      dataService.getInventory({ force: true }).then(inv => setInventory(Array.isArray(inv)?inv:[])).catch(()=>{});
+    }
+  }, [activeTab]);
+
+  const getAvailableKg = (key) => {
+    const item = inventory.find(x => x.id === key);
+    return Number(item?.stockKg || 0);
+  };
+
+  const resetAdjustmentForm = () => {
+    setAdjustType('finished');
+    setAdjCategoryId('');
+    setAdjSubProductId('');
+    setAdjSupplierId('');
+    setAdjDelta('');
+    setAdjReason('correction');
+    setAdjNotes('');
+  };
 
   // When switching back to Categories tab, if list still empty and not currently loading, fetch once.
   useEffect(() => {
@@ -1059,38 +1094,112 @@ const Management = () => {
       <p className="text-sm text-body">(Placeholder) Future: show real-time activity logs (purchases, production, adjustments, orders).</p>
     </div>
   );
-  const renderAdjustmentsTab = () => (
-    <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-secondary-blue flex items-center gap-2"><Wrench className="w-5 h-5"/>Inventory Adjustments</h3>
-      <p className="text-sm text-body mb-4">Record manual increases/decreases to inventory. (Placeholder form for now)</p>
-      <form className="space-y-4 max-w-lg">
-        <div>
-          <label className="block text-sm font-medium text-secondary-blue mb-2">Item Key / ID</label>
-          <input className="form-input-mica" placeholder="e.g., raw_supplier123 or finished_subProd456" />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-blue mb-2">Delta (kg)</label>
-            <input type="number" className="form-input-mica" placeholder="e.g., -25" />
+  const renderAdjustmentsTab = () => {
+    const selectedSubList = (categories.find(c => String(c.id) === String(adjCategoryId))?.subProducts || []);
+    const key = adjustType === 'finished'
+      ? (adjSubProductId ? `finished_${adjSubProductId}` : '')
+      : (adjSupplierId ? `raw_${adjSupplierId}` : '');
+    const available = key ? getAvailableKg(key) : 0;
+
+    const submitAdj = async () => {
+      if (adjSubmitting) return;
+      // Validation
+      if (adjustType === 'finished' && !adjSubProductId) { try{alert('Pick a category and sub-product.');}catch{} return; }
+      if (adjustType === 'raw' && !adjSupplierId) { try{alert('Pick a supplier for raw material.');}catch{} return; }
+      const delta = Number(adjDelta);
+      if (!Number.isFinite(delta) || delta === 0) { try{alert('Enter a non-zero delta in kg.');}catch{} return; }
+      if (delta < 0 && Math.abs(delta) > available + 1e-6) { try{alert(`Insufficient stock. Available: ${available} kg`);}catch{} return; }
+
+      setAdjSubmitting(true);
+      try {
+        await inventoryService.upsertDelta(key, delta);
+        try { alert('Adjustment applied.'); } catch {}
+        // refresh inventory snapshot and reset form
+        const inv = await dataService.getInventory({ force: true });
+        setInventory(Array.isArray(inv)?inv:[]);
+        resetAdjustmentForm();
+      } catch (e) {
+        console.error('Adjustment failed', e);
+        try { alert(e?.message || 'Failed to apply adjustment'); } catch {}
+      } finally { setAdjSubmitting(false); }
+    };
+
+    return (
+      <div className="space-y-6">
+        <h3 className="text-lg font-semibold text-secondary-blue flex items-center gap-2"><Wrench className="w-5 h-5"/>Inventory Adjustments</h3>
+        <div className="bg-white-bg rounded-lg shadow-md p-6 border border-light-gray-border max-w-2xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-secondary-blue mb-2">Adjust Type</label>
+              <select className="form-select-mica" value={adjustType} onChange={e=>{ setAdjustType(e.target.value); setAdjCategoryId(''); setAdjSubProductId(''); setAdjSupplierId(''); }}>
+                <option value="finished">Finished Product</option>
+                <option value="raw">Raw (by Supplier)</option>
+              </select>
+            </div>
+
+            {adjustType === 'finished' ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-secondary-blue mb-2">Category</label>
+                  <select className="form-select-mica" value={adjCategoryId} onChange={e=>{ setAdjCategoryId(e.target.value); setAdjSubProductId(''); }}>
+                    <option value="">Select</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-secondary-blue mb-2">Sub-Product</label>
+                  <select className="form-select-mica" value={adjSubProductId} onChange={e=>setAdjSubProductId(e.target.value)}>
+                    <option value="">Select</option>
+                    {selectedSubList.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+                  </select>
+                  {adjSubProductId && (
+                    <div className="mt-1 text-xs text-body">Available: <span className="font-medium text-secondary-blue">{available.toLocaleString()} kg</span></div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-secondary-blue mb-2">Supplier (Raw)</label>
+                <select className="form-select-mica" value={adjSupplierId} onChange={e=>setAdjSupplierId(e.target.value)}>
+                  <option value="">Select</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                {adjSupplierId && (
+                  <div className="mt-1 text-xs text-body">Available: <span className="font-medium text-secondary-blue">{available.toLocaleString()} kg</span></div>
+                )}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-blue mb-2">Reason</label>
-            <select className="form-select-mica">
-              <option value="correction">Correction</option>
-              <option value="damage">Damage</option>
-              <option value="loss">Loss</option>
-              <option value="other">Other</option>
-            </select>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div>
+              <label className="block text-sm font-medium text-secondary-blue mb-2">Delta (kg)</label>
+              <input type="number" className="form-input-mica" placeholder="e.g., -25 or 30" value={adjDelta} onChange={e=>setAdjDelta(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-secondary-blue mb-2">Reason</label>
+              <select className="form-select-mica" value={adjReason} onChange={e=>setAdjReason(e.target.value)}>
+                <option value="correction">Correction</option>
+                <option value="damage">Damage</option>
+                <option value="loss">Loss</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="md:col-span-1">
+              <label className="block text-sm font-medium text-secondary-blue mb-2">Notes</label>
+              <input className="form-input-mica" placeholder="Optional" value={adjNotes} onChange={e=>setAdjNotes(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mt-6">
+            <button type="button" className={`btn-primary-mica ${adjSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`} onClick={submitAdj} disabled={adjSubmitting || !key}>
+              {adjSubmitting ? 'Applying…' : 'Submit Adjustment'}
+            </button>
+            <button type="button" className="btn-secondary-mica" onClick={resetAdjustmentForm}>Clear</button>
           </div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-secondary-blue mb-2">Notes</label>
-          <textarea className="form-textarea-mica" rows={3} placeholder="Optional notes" />
-        </div>
-        <button type="button" className="btn-primary-mica">Submit Adjustment</button>
-      </form>
-    </div>
-  );
+      </div>
+    );
+  };
 
   return (
     <div id="management" className="bg-light-gray-bg min-h-screen">
