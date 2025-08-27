@@ -13,7 +13,8 @@ import {
   setDoc,
   runTransaction,
   increment,
-  serverTimestamp
+  serverTimestamp,
+  limit
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { validatePurchase, validateProduction, checkSupplierDeletable, ensureExists } from './refIntegrity';
@@ -81,7 +82,9 @@ export const suppliersService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
-      return { id: docRef.id, ...supplierData };
+  const created = { id: docRef.id, ...supplierData };
+  try { await logsService.addLog({ type: 'supplier', action: 'create', message: `Supplier added: ${supplierData.name||created.id}`, refId: created.id, data: created }); } catch {}
+  return created;
     } catch (error) {
       console.error('Error adding supplier: ', error);
       throw error;
@@ -111,7 +114,9 @@ export const suppliersService = {
         ...supplierData,
         updatedAt: new Date().toISOString()
       });
-      return { id: supplierId, ...supplierData };
+  const updated = { id: supplierId, ...supplierData };
+  try { await logsService.addLog({ type: 'supplier', action: 'update', message: `Supplier updated: ${supplierData.name||supplierId}`, refId: supplierId, data: updated }); } catch {}
+  return updated;
     } catch (error) {
       console.error('Error updating supplier: ', error);
       throw error;
@@ -126,8 +131,9 @@ export const suppliersService = {
       if (!check.ok) {
         throw new Error(check.reason || 'Supplier is referenced by other records');
       }
-      await deleteDoc(doc(db, 'suppliers', supplierId));
-      return supplierId;
+  await deleteDoc(doc(db, 'suppliers', supplierId));
+  try { await logsService.addLog({ type: 'supplier', action: 'delete', message: `Supplier deleted: ${supplierId}`, refId: supplierId }); } catch {}
+  return supplierId;
     } catch (error) {
       console.error('Error deleting supplier: ', error);
       throw error;
@@ -155,7 +161,9 @@ export const buyersService = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
-    return { id: docRef.id, ...buyerData };
+  const created = { id: docRef.id, ...buyerData };
+  try { await logsService.addLog({ type: 'buyer', action: 'create', message: `Buyer added: ${buyerData.name||created.id}`, refId: created.id, data: created }); } catch {}
+  return created;
   },
   async getBuyers() {
     const snap = await getDocs(collection(db, 'buyers'));
@@ -166,11 +174,14 @@ export const buyersService = {
   async updateBuyer(buyerId, buyerData) {
     const ref = doc(db, 'buyers', buyerId);
     await updateDoc(ref, { ...buyerData, updatedAt: new Date().toISOString() });
-    return { id: buyerId, ...buyerData };
+  const updated = { id: buyerId, ...buyerData };
+  try { await logsService.addLog({ type: 'buyer', action: 'update', message: `Buyer updated: ${buyerData.name||buyerId}`, refId: buyerId, data: updated }); } catch {}
+  return updated;
   },
   async deleteBuyer(buyerId) {
-    await deleteDoc(doc(db, 'buyers', buyerId));
-    return buyerId;
+  await deleteDoc(doc(db, 'buyers', buyerId));
+  try { await logsService.addLog({ type: 'buyer', action: 'delete', message: `Buyer deleted: ${buyerId}`, refId: buyerId }); } catch {}
+  return buyerId;
   }
 };
 
@@ -287,7 +298,7 @@ export const inventoryService = {
       updates.push({ id: `finished_${spKey}`, delta: -qty });
     }
     if (updates.length === 0) return;
-    await runTransaction(db, async (tx) => {
+  await runTransaction(db, async (tx) => {
       for (const u of updates) {
         const ref = doc(db, 'inventory', u.id);
         const snap = await tx.get(ref);
@@ -299,6 +310,10 @@ export const inventoryService = {
         tx.set(ref, { id: u.id, stockKg: next, updatedAt: serverTimestamp() }, { merge: true });
       }
     });
+    try {
+      const total = updates.reduce((s,u)=> s + Math.abs(u.delta), 0);
+      await logsService.addLog({ type: 'inventory', action: 'fulfillment', message: `Order fulfillment deducted ${total} kg across ${updates.length} item(s)`, data: { items } });
+    } catch {}
   }
 };
 
@@ -315,7 +330,9 @@ export const ordersService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
-      return { id: docRef.id, ...orderData };
+  const created = { id: docRef.id, ...orderData };
+  try { await logsService.addLog({ type: 'order', action: 'create', message: `Order created`, refId: created.id, data: { items: (orderData.items||[]).length, totalAmount: orderData.totalAmount } }); } catch {}
+  return created;
     } catch (error) {
       console.error('Error adding order: ', error);
       throw error;
@@ -343,11 +360,12 @@ export const ordersService = {
   async updateOrderStatus(orderId, status) {
     try {
       const orderRef = doc(db, 'orders', orderId);
-      await updateDoc(orderRef, {
+  await updateDoc(orderRef, {
         status,
         updatedAt: new Date().toISOString()
       });
-      return { id: orderId, status };
+  try { await logsService.addLog({ type: 'order', action: 'status', message: `Order ${orderId} status → ${status}`, refId: orderId, data: { status } }); } catch {}
+  return { id: orderId, status };
     } catch (error) {
       console.error('Error updating order status: ', error);
       throw error;
@@ -367,7 +385,12 @@ export const productionService = {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
-      return { id: docRef.id, ...batchData };
+      const created = { id: docRef.id, ...batchData };
+      try {
+        const produced = (batchData.totalProducedKg != null) ? batchData.totalProducedKg : (batchData.producedProducts||[]).reduce((s,p)=>s+(p.quantityKg||0),0);
+        await logsService.addLog({ type: 'production', action: 'create', message: `Batch added: raw ${batchData.rawMaterialUsedKg||batchData.rawUsedKg||0} kg → produced ${produced||0} kg`, refId: created.id, data: { produced, rawUsed: batchData.rawMaterialUsedKg||batchData.rawUsedKg||0 } });
+      } catch {}
+      return created;
     } catch (error) {
       console.error('Error adding production batch: ', error);
       throw error;
@@ -396,8 +419,10 @@ export const productionService = {
 export const categoriesService = {
   async addCategory(name) {
     const now = new Date().toISOString();
-    const ref = await addDoc(collection(db, 'categories'), { name, createdAt: now, updatedAt: now });
-    return { id: ref.id, name, subProducts: [] };
+  const ref = await addDoc(collection(db, 'categories'), { name, createdAt: now, updatedAt: now });
+  const created = { id: ref.id, name, subProducts: [] };
+  try { await logsService.addLog({ type: 'category', action: 'create', message: `Category added: ${name}`, refId: created.id, data: created }); } catch {}
+  return created;
   },
   async getCategories() {
     const catsSnap = await getDocs(collection(db, 'categories'));
@@ -413,30 +438,36 @@ export const categoriesService = {
   },
   async updateCategoryName(categoryId, name) {
     const ref = doc(db, 'categories', categoryId);
-    await updateDoc(ref, { name, updatedAt: new Date().toISOString() });
-    return { id: categoryId, name };
+  await updateDoc(ref, { name, updatedAt: new Date().toISOString() });
+  try { await logsService.addLog({ type: 'category', action: 'update', message: `Category renamed: ${name}`, refId: categoryId, data: { name } }); } catch {}
+  return { id: categoryId, name };
   },
   async deleteCategory(categoryId) {
     // delete subProducts then category
     const subsSnap = await getDocs(collection(db, 'categories', categoryId, 'subProducts'));
     await Promise.all(subsSnap.docs.map(s => deleteDoc(doc(db, 'categories', categoryId, 'subProducts', s.id))));
-    await deleteDoc(doc(db, 'categories', categoryId));
-    return categoryId;
+  await deleteDoc(doc(db, 'categories', categoryId));
+  try { await logsService.addLog({ type: 'category', action: 'delete', message: `Category deleted: ${categoryId}`, refId: categoryId }); } catch {}
+  return categoryId;
   },
   async addSubProduct(categoryId, subProduct) {
     const now = new Date().toISOString();
     const payload = { name: subProduct.name, defaultBagWeight: subProduct.defaultBagWeight, defaultUnit: subProduct.defaultUnit, createdAt: now, updatedAt: now };
-    const ref = await addDoc(collection(db, 'categories', categoryId, 'subProducts'), payload);
-    return { id: ref.id, ...payload };
+  const ref = await addDoc(collection(db, 'categories', categoryId, 'subProducts'), payload);
+  const created = { id: ref.id, ...payload };
+  try { await logsService.addLog({ type: 'subProduct', action: 'create', message: `Sub-Product added: ${payload.name}`, refId: created.id, data: { categoryId, ...created } }); } catch {}
+  return created;
   },
   async updateSubProduct(categoryId, subProductId, updates) {
     const ref = doc(db, 'categories', categoryId, 'subProducts', subProductId);
-    await updateDoc(ref, { ...updates, updatedAt: new Date().toISOString() });
-    return { id: subProductId, ...updates };
+  await updateDoc(ref, { ...updates, updatedAt: new Date().toISOString() });
+  try { await logsService.addLog({ type: 'subProduct', action: 'update', message: `Sub-Product updated: ${updates?.name||subProductId}`, refId: subProductId, data: { categoryId, ...updates } }); } catch {}
+  return { id: subProductId, ...updates };
   },
   async deleteSubProduct(categoryId, subProductId) {
-    await deleteDoc(doc(db, 'categories', categoryId, 'subProducts', subProductId));
-    return subProductId;
+  await deleteDoc(doc(db, 'categories', categoryId, 'subProducts', subProductId));
+  try { await logsService.addLog({ type: 'subProduct', action: 'delete', message: `Sub-Product deleted: ${subProductId}`, refId: subProductId, data: { categoryId } }); } catch {}
+  return subProductId;
   }
 };
 
@@ -445,8 +476,10 @@ export const purchasesService = {
   async addPurchase(data) {
     const now = new Date().toISOString();
     await validatePurchase(data);
-    const ref = await addDoc(collection(db, 'purchases'), { ...data, createdAt: now, updatedAt: now });
-    return { id: ref.id, ...data };
+  const ref = await addDoc(collection(db, 'purchases'), { ...data, createdAt: now, updatedAt: now });
+  const created = { id: ref.id, ...data };
+  try { await logsService.addLog({ type: 'purchase', action: 'create', message: `Purchase added: ${data.quantityKg||0} kg from ${data.supplierId||'supplier'}`, refId: created.id, data: created }); } catch {}
+  return created;
   },
   async getPurchases() {
     const snap = await getDocs(collection(db, 'purchases'));
@@ -456,12 +489,14 @@ export const purchasesService = {
     if (patch?.supplierId) {
       await ensureExists('suppliers', patch.supplierId, { fieldLabel: 'supplierId' });
     }
-    await updateDoc(doc(db, 'purchases', id), { ...patch, updatedAt: new Date().toISOString() });
-    return { id, ...patch };
+  await updateDoc(doc(db, 'purchases', id), { ...patch, updatedAt: new Date().toISOString() });
+  try { await logsService.addLog({ type: 'purchase', action: 'update', message: `Purchase updated: ${id}`, refId: id, data: patch }); } catch {}
+  return { id, ...patch };
   },
   async deletePurchase(id) {
-    await deleteDoc(doc(db, 'purchases', id));
-    return id;
+  await deleteDoc(doc(db, 'purchases', id));
+  try { await logsService.addLog({ type: 'purchase', action: 'delete', message: `Purchase deleted: ${id}`, refId: id }); } catch {}
+  return id;
   }
 };
 
@@ -591,7 +626,8 @@ export const adminService = {
         await Promise.all(subsSnap.docs.map(s => deleteDoc(doc(db, 'categories', c.id, 'subProducts', s.id))));
         await deleteDoc(doc(db, 'categories', c.id));
       }
-    } catch (e) { console.warn('Failed deleting categories', e); }
+  } catch (e) { console.warn('Failed deleting categories', e); }
+  try { await logsService.addLog({ type: 'admin', action: 'wipe', message: 'All data wiped via Danger Zone' }); } catch {}
   }
 };
 
@@ -615,6 +651,45 @@ export const settingsService = {
   async updateDashboardSettings(patch) {
     const ref = doc(db, 'app_settings', 'dashboard');
     await setDoc(ref, { ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+  try { await logsService.addLog({ type: 'settings', action: 'update', message: 'Dashboard settings updated', data: patch }); } catch {}
     return patch;
+  }
+};
+
+// Activity Logs Service
+export const logsService = {
+  async addLog(entry) {
+    try {
+      const payload = {
+        type: entry.type || 'app',
+        action: entry.action || 'info',
+        message: entry.message || '',
+        refId: entry.refId || null,
+        data: entry.data || null,
+        ts: serverTimestamp(),
+        createdAt: new Date().toISOString()
+      };
+      await addDoc(collection(db, 'activity_logs'), payload);
+    } catch (e) {
+      console.warn('addLog failed', e);
+    }
+  },
+  async getLogs({ startDate, endDate, limitCount = 10 } = {}) {
+    try {
+      const col = collection(db, 'activity_logs');
+      const parts = [];
+      if (startDate) {
+        parts.push(where('createdAt', '>=', startDate));
+      }
+      if (endDate) {
+        parts.push(where('createdAt', '<=', endDate));
+      }
+      const q = parts.length ? query(col, ...parts, orderBy('createdAt', 'desc'), limit(limitCount)) : query(col, orderBy('createdAt','desc'), limit(limitCount));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.warn('getLogs failed', e);
+      return [];
+    }
   }
 };

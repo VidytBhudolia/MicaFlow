@@ -9,6 +9,7 @@ import OrderSheet from './pages/OrderSheet';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
 import DailyAnalytics from './pages/DailyAnalytics';
+import Logs from './pages/Logs';
 import './App.css';
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/daily-analytics" element={<DailyAnalytics />} />
+            <Route path="/logs" element={<Logs />} />
             {/* Legacy redirects */}
             <Route path="/inventory-analytics" element={<Navigate to="/inventory" replace />} />
             <Route path="/logs-adjustments" element={<Navigate to="/management" replace />} />

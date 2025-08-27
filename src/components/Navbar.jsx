@@ -30,6 +30,7 @@ const Navbar = () => {
     { name: 'Daily Analytics', path: '/daily-analytics' },
     { name: 'Order Sheet', path: '/order-sheet' },
     { name: 'Management', path: '/management' },
+  { name: 'Logs', path: '/logs' },
     { name: 'Reports', path: '/reports' },
   ];
 
